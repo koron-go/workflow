@@ -4,7 +4,7 @@ import "context"
 
 // Task represents a task of workflow.
 type Task struct {
-	Name   string
+	Name string
 
 	runner Runner
 
