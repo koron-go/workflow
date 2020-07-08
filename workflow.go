@@ -77,6 +77,7 @@ func (wCtx *Context) prepareTaskContext(task *Task) *TaskContext {
 	}
 	taskCtx := &TaskContext{
 		wCtx:     wCtx,
+		name:     task.Name,
 		runner:   task.runner,
 		requires: task.copyRequires(),
 	}
@@ -91,6 +92,7 @@ func (wCtx *Context) prepareTaskContext(task *Task) *TaskContext {
 func (wCtx *Context) taskCompleted(taskCtx *TaskContext, err error) {
 	wCtx.rw.Lock()
 	taskCtx.err = err
+	taskCtx.ended = true
 	delete(wCtx.running, taskCtx)
 	wCtx.rw.Unlock()
 	wCtx.startTasks()

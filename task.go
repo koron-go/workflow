@@ -20,11 +20,12 @@ func NewTask(name string, runner Runner, requires ...*Task) *Task {
 	}
 }
 
-// AddRequires adds required tasks to start this taks.
-func (task *Task) AddRequires(targets []*Task) *Task {
-	task.requires = append(task.requires, targets...)
-	return task
-}
+// Not need yet.
+//// AddRequires adds required tasks to start this taks.
+//func (task *Task) AddRequires(targets []*Task) *Task {
+//	task.requires = append(task.requires, targets...)
+//	return task
+//}
 
 func (task *Task) copyRequires() []*Task {
 	if len(task.requires) == 0 {
@@ -39,6 +40,7 @@ func (task *Task) copyRequires() []*Task {
 type TaskContext struct {
 	wCtx *Context
 
+	name     string
 	runner   Runner
 	requires []*Task
 
@@ -100,4 +102,8 @@ func (taskCtx *TaskContext) start(wCtx *Context) {
 		}
 	}
 	wCtx.taskCompleted(taskCtx, nil)
+}
+
+func (taskCtx *TaskContext) Name() string {
+	return taskCtx.name
 }
