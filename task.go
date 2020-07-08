@@ -15,7 +15,7 @@ type Task struct {
 func NewTask(name string, runner Runner, requires ...*Task) *Task {
 	return &Task{
 		Name:     name,
-		Runner:   runner,
+		runner:   runner,
 		requires: requires,
 	}
 }
@@ -26,19 +26,21 @@ func (task *Task) AddRequires(targets []*Task) *Task {
 	return task
 }
 
-func (task *Task) isRequire(target *Task) bool {
-	for _, req := range task.requires {
-		if target == req {
-			return true
-		}
+func (task *Task) copyRequires() []*Task {
+	if len(task.requires) == 0 {
+		return nil
 	}
-	return false
+	dst := make([]*Task, len(task.requires))
+	copy(dst, task.requires)
+	return dst
 }
 
 // TaskContext is a context for an executing task.
 type TaskContext struct {
-	task *Task
 	wCtx *Context
+
+	runner   Runner
+	requires []*Task
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -74,14 +76,11 @@ func (taskCtx *TaskContext) SetOutput(v interface{}) {
 
 // Input gets output of required Task.
 func (taskCtx *TaskContext) Input(task *Task) (interface{}, error) {
-	if !taskCtx.task.isRequire(task) {
-		return nil, ErrNotRequired
-	}
 	return taskCtx.wCtx.getTaskOutput(task)
 }
 
 func (taskCtx *TaskContext) canStart(wCtx *Context) bool {
-	for _, req := range taskCtx.task.requires {
+	for _, req := range taskCtx.requires {
 		reqCtx := wCtx.taskContext(req)
 		if reqCtx != nil && !reqCtx.ended {
 			return false
@@ -93,7 +92,7 @@ func (taskCtx *TaskContext) canStart(wCtx *Context) bool {
 func (taskCtx *TaskContext) start(wCtx *Context) {
 	taskCtx.ctx, taskCtx.cancel = context.WithCancel(wCtx.ctx)
 	defer taskCtx.cancel()
-	if r := taskCtx.task.Runner; r != nil {
+	if r := taskCtx.runner; r != nil {
 		err := r.Run(taskCtx)
 		if err != nil {
 			wCtx.taskCompleted(taskCtx, err)

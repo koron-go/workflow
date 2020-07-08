@@ -76,8 +76,9 @@ func (wCtx *Context) prepareTaskContext(task *Task) *TaskContext {
 		return taskContext
 	}
 	taskCtx := &TaskContext{
-		task: task,
-		wCtx: wCtx,
+		wCtx:     wCtx,
+		runner:   task.runner,
+		requires: task.copyRequires(),
 	}
 	wCtx.contexts[task] = taskCtx
 	wCtx.idling[taskCtx] = struct{}{}
@@ -117,13 +118,13 @@ func (wCtx *Context) finish() error {
 	err := &Error{
 		Failed: make(map[*Task]error),
 	}
-	for _, taskCtx := range wCtx.contexts {
-		if taskCtx.err != nil {
-			err.Failed[taskCtx.task] = taskCtx.err
+	for task, taskCtx := range wCtx.contexts {
+		if _, ok := wCtx.idling[taskCtx]; ok {
+			err.Idle = append(err.Idle, task)
 		}
-	}
-	for taskCtx := range wCtx.idling {
-		err.Idle = append(err.Idle, taskCtx.task)
+		if taskCtx.err != nil {
+			err.Failed[task] = taskCtx.err
+		}
 	}
 	wCtx.contexts = nil
 	wCtx.idling = nil
