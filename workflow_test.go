@@ -3,6 +3,7 @@ package workflow_test
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -123,7 +124,7 @@ func TestParallel(t *testing.T) {
 	}
 }
 
-func TestCancelWorkflow(t *testing.T) {
+func TestCancel(t *testing.T) {
 	sum := 2
 	task1 := workflow.NewTask(t.Name()+"_1",
 		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
@@ -150,6 +151,66 @@ func TestCancelWorkflow(t *testing.T) {
 		t.Fatal("timeout not works")
 	}
 	exp := (2 * 3) + 5
+	if sum != exp {
+		t.Fatalf("unexpected sum: want=%d got=%d", exp, sum)
+	}
+}
+
+func TestCancelWorkflow(t *testing.T) {
+	sum := 2
+	task1 := workflow.NewTask(t.Name()+"_1",
+		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
+			ctx := taskCtx.Context()
+			<-ctx.Done()
+			sum += 3
+			return ctx.Err()
+		}),
+	)
+	task2 := workflow.NewTask(t.Name()+"_2",
+		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
+			ctx := taskCtx.Context()
+			<-ctx.Done()
+			sum += 5
+			return ctx.Err()
+		}),
+	)
+	task3 := workflow.NewTask(t.Name()+"_3",
+		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
+			sum *= 7
+			time.Sleep(10 * time.Millisecond)
+			taskCtx.CancelWorkflow()
+			sum += 11
+			return nil
+		}),
+	)
+	task4 := workflow.NewTask(t.Name()+"_4",
+		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
+			sum *= 12
+			return nil
+		}), task1, task2, task3,
+	)
+	err := workflow.Run(context.Background(), task4)
+	if err == nil {
+		t.Fatal("workflow should be failed")
+	}
+
+	// check error details.
+	expErr := `workflow failed: 1 tasks not run, 2 tasks have error`
+	if s := err.Error(); s != expErr {
+		t.Fatalf("unexpected error:\nwant=%s\ngot=%s", expErr, s)
+	}
+	if !reflect.DeepEqual(&workflow.Error{
+		Idle: []*workflow.Task{task4},
+		Failed: map[*workflow.Task]error{
+			task1: context.Canceled,
+			task2: context.Canceled,
+		},
+	}, err) {
+		t.Fatalf("unexpected error details: %#v", err)
+	}
+
+	// check execution
+	exp := (2 * 7) + 3 + 5 + 11
 	if sum != exp {
 		t.Fatalf("unexpected sum: want=%d got=%d", exp, sum)
 	}

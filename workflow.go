@@ -5,8 +5,8 @@ import (
 	"sync"
 )
 
-// Context is a context for an executing workflow.
-type Context struct {
+// workflowContext is a context for an executing workflow.
+type workflowContext struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
@@ -18,9 +18,9 @@ type Context struct {
 	running  map[*TaskContext]struct{}
 }
 
-func newWorkflowContext(ctx context.Context) *Context {
+func newWorkflowContext(ctx context.Context) *workflowContext {
 	ctx, cancel := context.WithCancel(ctx)
-	return &Context{
+	return &workflowContext{
 		ctx:      ctx,
 		cancel:   cancel,
 		quit:     make(chan struct{}),
@@ -30,23 +30,7 @@ func newWorkflowContext(ctx context.Context) *Context {
 	}
 }
 
-func (wCtx *Context) getTaskOutput(task *Task) (interface{}, error) {
-	wCtx.rw.RLock()
-	defer wCtx.rw.RUnlock()
-	taskCtx, ok := wCtx.contexts[task]
-	if !ok {
-		return nil, ErrNotInWorkflow
-	}
-	if taskCtx.err != nil {
-		return nil, taskCtx.err
-	}
-	if taskCtx.output == nil {
-		return nil, ErrNoOutput
-	}
-	return taskCtx.output, nil
-}
-
-func (wCtx *Context) prepareTaskContext(task *Task) *TaskContext {
+func (wCtx *workflowContext) prepareTaskContext(task *Task) *TaskContext {
 	if taskCtx, ok := wCtx.contexts[task]; ok {
 		return taskCtx
 	}
@@ -64,7 +48,7 @@ func (wCtx *Context) prepareTaskContext(task *Task) *TaskContext {
 	return taskCtx
 }
 
-func (wCtx *Context) taskCompleted(taskCtx *TaskContext, err error) {
+func (wCtx *workflowContext) taskCompleted(taskCtx *TaskContext, err error) {
 	wCtx.rw.Lock()
 	taskCtx.err = err
 	taskCtx.ended = true
@@ -73,7 +57,7 @@ func (wCtx *Context) taskCompleted(taskCtx *TaskContext, err error) {
 	wCtx.startTasks()
 }
 
-func (wCtx *Context) startTasks() {
+func (wCtx *workflowContext) startTasks() {
 	wCtx.rw.Lock()
 	defer wCtx.rw.Unlock()
 	for taskCtx := range wCtx.idling {
@@ -91,7 +75,7 @@ func (wCtx *Context) startTasks() {
 	close(wCtx.quit)
 }
 
-func (wCtx *Context) finish() error {
+func (wCtx *workflowContext) finish() error {
 	err := &Error{
 		Failed: make(map[*Task]error),
 	}
