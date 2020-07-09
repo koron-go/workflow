@@ -64,7 +64,7 @@ func (taskCtx *TaskContext) WorkflowContext() *Context {
 
 // Cancel sends cancel signal to a Task.
 func (taskCtx *TaskContext) Cancel() {
-	if taskCtx.cancel != nil {
+	if taskCtx != nil && taskCtx.cancel != nil {
 		taskCtx.cancel()
 	}
 }
@@ -83,8 +83,8 @@ func (taskCtx *TaskContext) Input(task *Task) (interface{}, error) {
 
 func (taskCtx *TaskContext) canStart(wCtx *Context) bool {
 	for _, req := range taskCtx.requires {
-		reqCtx := wCtx.taskContext(req)
-		if reqCtx != nil && !reqCtx.ended {
+		reqCtx, ok := wCtx.contexts[req]
+		if ok && (!reqCtx.ended || reqCtx.err != nil) {
 			return false
 		}
 	}

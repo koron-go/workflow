@@ -123,7 +123,7 @@ func TestParallel(t *testing.T) {
 	}
 }
 
-func TestCancel(t *testing.T) {
+func TestCancelWorkflow(t *testing.T) {
 	sum := 2
 	task1 := workflow.NewTask(t.Name()+"_1",
 		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
@@ -155,18 +155,114 @@ func TestCancel(t *testing.T) {
 	}
 }
 
+func TestCancelTask(t *testing.T) {
+	sum := 2
+	task1 := workflow.NewTask(t.Name()+"_1",
+		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
+			sum *= 3
+			return nil
+		}),
+	)
+	task2 := workflow.NewTask(t.Name()+"_2",
+		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
+			sum += 5
+			st := time.Now()
+			ctx := taskCtx.Context()
+			<-ctx.Done()
+			d := time.Since(st)
+			err := ctx.Err()
+			if !errors.Is(err, context.Canceled) {
+				t.Errorf("error is not  Canceled: %s", err)
+			}
+			if d < 10*time.Millisecond {
+				t.Errorf("too short delay, something wrong: %s", d)
+			}
+			sum *= 7
+			return nil
+		}), task1,
+	)
+	task3 := workflow.NewTask(t.Name()+"_3",
+		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
+			sum += 11
+			time.Sleep(15 * time.Millisecond)
+			return nil
+		}), task1,
+	)
+	task4 := workflow.NewTask(t.Name()+"_4",
+		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
+			sum *= 13
+			taskCtx.WorkflowContext().TaskContext(task2).Cancel()
+			return nil
+		}), task3,
+	)
+	err := workflow.Run(context.Background(), task2, task4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exp := ((2 * 3) + 5 + 11) * 13 * 7
+	if sum != exp {
+		t.Fatalf("unexpected sum: want=%d got=%d", exp, sum)
+	}
+}
+
 func TestError(t *testing.T) {
 	task1 := workflow.NewTask(t.Name()+"_1",
 		workflow.RunnerFunc(func(*workflow.TaskContext) error {
 			return errors.New("planned error")
 		}),
 	)
-	err := workflow.Run(context.Background(), task1)
+	task2 := workflow.NewTask(t.Name()+"_2",
+		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+			t.Error("never executed")
+			return nil
+		}), task1,
+	)
+	err := workflow.Run(context.Background(), task2)
 	if err == nil {
 		t.Fatal("workflow should be failed")
 	}
-	exp := `workflow failed: 0 tasks not run, 1 tasks have error`
+	exp := `workflow failed: 1 tasks not run, 1 tasks have error`
 	if s := err.Error(); s != exp {
 		t.Fatalf("unexpected error:\nwant=%s\ngot=%s", exp, s)
+	}
+}
+
+func TestOutputInput(t *testing.T) {
+	sum := 2
+	task1 := workflow.NewTask(t.Name()+"_1",
+		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
+			sum *= 3
+			taskCtx.SetOutput(sum)
+			return nil
+		}),
+	)
+	task2 := workflow.NewTask(t.Name()+"_2",
+		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
+			sum += 5
+			taskCtx.SetOutput(sum)
+			return nil
+		}), task1,
+	)
+	task3 := workflow.NewTask(t.Name()+"_3",
+		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
+			o1, err := taskCtx.Input(task1)
+			if err != nil {
+				return err
+			}
+			o2, err := taskCtx.Input(task2)
+			if err != nil {
+				return err
+			}
+			sum = o1.(int) * o2.(int) * 7
+			return nil
+		}), task2,
+	)
+	err := workflow.Run(context.Background(), task3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exp := (2 * 3) * (2*3 + 5) * 7
+	if sum != exp {
+		t.Fatalf("unexpected sum: want=%d got=%d", exp, sum)
 	}
 }

@@ -46,14 +46,6 @@ func (wCtx *Context) getTaskOutput(task *Task) (interface{}, error) {
 	return taskCtx.output, nil
 }
 
-func (wCtx *Context) taskContext(task *Task) *TaskContext {
-	taskCtx, ok := wCtx.contexts[task]
-	if !ok {
-		return nil
-	}
-	return taskCtx
-}
-
 // Context gets a context.Context of a workflow.
 func (wCtx *Context) Context() context.Context {
 	return wCtx.ctx
@@ -61,19 +53,23 @@ func (wCtx *Context) Context() context.Context {
 
 // Cancel sends cancel signal to a workflow.
 func (wCtx *Context) Cancel() {
-	if wCtx.cancel != nil {
+	if wCtx != nil && wCtx.cancel != nil {
 		wCtx.cancel()
 	}
 }
 
 // TaskContext obtains a task context for a task.
 func (wCtx *Context) TaskContext(task *Task) *TaskContext {
-	return wCtx.taskContext(task)
+	taskCtx, ok := wCtx.contexts[task]
+	if !ok {
+		return nil
+	}
+	return taskCtx
 }
 
 func (wCtx *Context) prepareTaskContext(task *Task) *TaskContext {
-	if taskContext, ok := wCtx.contexts[task]; ok {
-		return taskContext
+	if taskCtx, ok := wCtx.contexts[task]; ok {
+		return taskCtx
 	}
 	taskCtx := &TaskContext{
 		wCtx:     wCtx,
