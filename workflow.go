@@ -46,27 +46,6 @@ func (wCtx *Context) getTaskOutput(task *Task) (interface{}, error) {
 	return taskCtx.output, nil
 }
 
-// Context gets a context.Context of a workflow.
-func (wCtx *Context) Context() context.Context {
-	return wCtx.ctx
-}
-
-// Cancel sends cancel signal to a workflow.
-func (wCtx *Context) Cancel() {
-	if wCtx != nil && wCtx.cancel != nil {
-		wCtx.cancel()
-	}
-}
-
-// TaskContext obtains a task context for a task.
-func (wCtx *Context) TaskContext(task *Task) *TaskContext {
-	taskCtx, ok := wCtx.contexts[task]
-	if !ok {
-		return nil
-	}
-	return taskCtx
-}
-
 func (wCtx *Context) prepareTaskContext(task *Task) *TaskContext {
 	if taskCtx, ok := wCtx.contexts[task]; ok {
 		return taskCtx
@@ -133,7 +112,8 @@ func (wCtx *Context) finish() error {
 	return nil
 }
 
-// Run executes a workflow composed from tasks.
+// Run executes a workflow with termination tasks.  All tasks which depended by
+// termination tasks and recursively dependeds will be executed.
 func Run(ctx context.Context, tasks ...*Task) error {
 	if len(tasks) == 0 {
 		return ErrNoTasks

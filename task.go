@@ -57,16 +57,19 @@ func (taskCtx *TaskContext) Context() context.Context {
 	return taskCtx.ctx
 }
 
-// WorkflowContext obtains workflow's context, parent of this task.
-func (taskCtx *TaskContext) WorkflowContext() *Context {
-	return taskCtx.wCtx
+// CancelTask cancels another task in a workflow.
+// This can't cancel myself or tasks not in a workflow.
+func (taskCtx *TaskContext) CancelTask(task *Task) {
+	otherCtx, ok := taskCtx.wCtx.contexts[task]
+	if !ok || otherCtx == taskCtx {
+		return
+	}
+	otherCtx.cancel()
 }
 
-// Cancel sends cancel signal to a Task.
-func (taskCtx *TaskContext) Cancel() {
-	if taskCtx != nil && taskCtx.cancel != nil {
-		taskCtx.cancel()
-	}
+// CancelWorkflow cancels a workflow, which current task belongs.
+func (taskCtx *TaskContext) CancelWorkflow() {
+	taskCtx.wCtx.cancel()
 }
 
 // SetOutput sets output data of a Task.

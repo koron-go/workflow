@@ -191,7 +191,7 @@ func TestCancelTask(t *testing.T) {
 	task4 := workflow.NewTask(t.Name()+"_4",
 		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
 			sum *= 13
-			taskCtx.WorkflowContext().TaskContext(task2).Cancel()
+			taskCtx.CancelTask(task2)
 			return nil
 		}), task3,
 	)
