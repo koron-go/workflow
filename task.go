@@ -62,14 +62,16 @@ func (taskCtx *TaskContext) CancelWorkflow() {
 	taskCtx.wCtx.cancel()
 }
 
-// CancelTask cancels another task in a workflow.
+// CancelTask cancels another tasks in a workflow.
 // This can't cancel myself nor tasks not in a workflow.
-func (taskCtx *TaskContext) CancelTask(task *Task) {
-	otherCtx, ok := taskCtx.wCtx.contexts[task]
-	if !ok || otherCtx == taskCtx {
-		return
+func (taskCtx *TaskContext) CancelTask(tasks ...*Task) {
+	for _, task := range tasks {
+		otherCtx, ok := taskCtx.wCtx.contexts[task]
+		if !ok || otherCtx == taskCtx {
+			continue
+		}
+		otherCtx.cancel()
 	}
-	otherCtx.cancel()
 }
 
 // SetOutput sets output data of a Task.
