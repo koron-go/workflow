@@ -35,6 +35,12 @@ func (task *Task) WhenStart(tasks ...*Task) *Task {
 	return task
 }
 
+// WhenEnd adds depended tasks, this task will start when those tasks ended.
+func (task *Task) WhenEnd(tasks ...*Task) *Task {
+	task.dep.when(onEnd, tasks...)
+	return task
+}
+
 // TaskContext is a context for an executing task.
 type TaskContext struct {
 	wCtx *workflowContext

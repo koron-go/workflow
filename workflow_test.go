@@ -351,6 +351,54 @@ func TestOutputInput(t *testing.T) {
 	}
 }
 
+func TestInvalidOutput(t *testing.T) {
+	errFoo := errors.New("foo")
+	task1 := workflow.NewTask(t.Name()+"_1",
+		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
+			// no outputs
+			return nil
+		}),
+	)
+	task2 := workflow.NewTask(t.Name()+"_2",
+		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
+			// end with error
+			return errFoo
+		}),
+	)
+	task3 := workflow.NewTask(t.Name()+"_3",
+		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
+			// not in a workflow
+			return nil
+		}),
+	)
+	task0 := workflow.NewTask(t.Name()+"_0",
+		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
+			_, err := taskCtx.Input(task1)
+			if !errors.Is(err, workflow.ErrNoOutput) {
+				t.Errorf("unexpected error for task1:\nwant=%s\ngot=%s", workflow.ErrNoOutput, err)
+			}
+			_, err = taskCtx.Input(task2)
+			if !errors.Is(err, errFoo) {
+				t.Errorf("unexpected error for task2:\nwant=%s\ngot=%s", errFoo, err)
+			}
+			_, err = taskCtx.Input(task3)
+			if !errors.Is(err, workflow.ErrNotInWorkflow) {
+				t.Errorf("unexpected error for task2:\nwant=%s\ngot=%s", workflow.ErrNotInWorkflow, err)
+			}
+			// verify outputs
+			return nil
+		}),
+	).WhenComplete(task1).WhenEnd(task2)
+	err := workflow.Run(context.Background(), task0)
+	if err == nil {
+		t.Fatal("workflow should be failed")
+	}
+	expErr := `workflow failed: 0 tasks not run, 1 tasks have error`
+	if s := err.Error(); s != expErr {
+		t.Fatalf("unexpected error:\nwant=%s\ngot=%s", expErr, s)
+	}
+}
+
 func TestAtExit(t *testing.T) {
 	sum := 2
 	task1 := workflow.NewTask(t.Name()+"_1",
@@ -387,7 +435,7 @@ func TestAtExit(t *testing.T) {
 	}
 }
 
-func TestWithComplete(t *testing.T) {
+func TestWhenComplete(t *testing.T) {
 	sum := 2
 	task1 := workflow.NewTask(t.Name()+"_1",
 		workflow.RunnerFunc(func(*workflow.TaskContext) error {
@@ -420,34 +468,67 @@ func TestWithComplete(t *testing.T) {
 	}
 }
 
-func TestWithStart(t *testing.T) {
-	//  * task1 -> (start) -> task2
-	//  * task2 -> (end) -> task3
+func TestWhenStart(t *testing.T) {
+	// task1 -> (complete) -> task2
+	// task2 -> (start) -> task3
+	// task3 -> (complete) -> task4
 	sum := 2
 	task1 := workflow.NewTask(t.Name()+"_1",
 		workflow.RunnerFunc(func(*workflow.TaskContext) error {
-			sum += 3
+			sum *= 11
 			return nil
 		}),
 	)
 	task2 := workflow.NewTask(t.Name()+"_2",
 		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+			sum += 3
+			return nil
+		}), task1,
+	)
+	task3 := workflow.NewTask(t.Name()+"_3",
+		workflow.RunnerFunc(func(*workflow.TaskContext) error {
 			sum += 5
 			return nil
 		}),
-	).WhenStart(task1)
-	task3 := workflow.NewTask(t.Name()+"_3",
+	).WhenStart(task2)
+	task4 := workflow.NewTask(t.Name()+"_5",
 		workflow.RunnerFunc(func(*workflow.TaskContext) error {
 			sum += 7
 			return nil
-		}), task2,
+		}), task3,
 	)
-	err := workflow.Run(context.Background(), task3)
+	err := workflow.Run(context.Background(), task4)
 	if err != nil {
 		t.Fatal(err)
 	}
-	exp := 2 + 3 + 5 + 7
+	exp := 2*11 + 3 + 5 + 7
 	if sum != exp {
 		t.Fatalf("unexpected sum: want=%d got=%d", exp, sum)
+	}
+}
+
+func TestWhenEnd(t *testing.T) {
+	task1 := workflow.NewTask(t.Name()+"_1",
+		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+			return nil
+		}),
+	)
+	task2 := workflow.NewTask(t.Name()+"_2",
+		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+			return errors.New("foo")
+		}), task1,
+	)
+	task3 := workflow.NewTask(t.Name()+"_3",
+		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+			return nil
+		}),
+	).WhenEnd(task2)
+	err := workflow.Run(context.Background(), task3)
+	if err == nil {
+		t.Fatal("workflow should be failed")
+	}
+	expErr := `workflow failed: 0 tasks not run, 1 tasks have error`
+	if s := err.Error(); s != expErr {
+		t.Fatalf("unexpected error:\nwant=%s\ngot=%s", expErr, s)
 	}
 }

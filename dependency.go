@@ -5,6 +5,7 @@ type dependType int
 const (
 	onComplete dependType = iota
 	onStart
+	onEnd
 )
 
 type dependency map[*Task]dependType
@@ -41,6 +42,10 @@ func (dep dependency) isSatisfy(wCtx *workflowContext) bool {
 			}
 		case onStart:
 			if ok && !reqCtx.started {
+				return false
+			}
+		case onEnd:
+			if ok && !reqCtx.ended {
 				return false
 			}
 		}
