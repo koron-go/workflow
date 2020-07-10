@@ -327,3 +327,39 @@ func TestOutputInput(t *testing.T) {
 		t.Fatalf("unexpected sum: want=%d got=%d", exp, sum)
 	}
 }
+
+func TestAtExit(t *testing.T) {
+	sum := 2
+	task1 := workflow.NewTask(t.Name()+"_1",
+		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
+			taskCtx.AtExit(func(context.Context) {
+				sum *= 3
+			})
+			return nil
+		}),
+	)
+	task2 := workflow.NewTask(t.Name()+"_2",
+		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
+			taskCtx.AtExit(func(context.Context) {
+				sum += 5
+			})
+			return nil
+		}), task1,
+	)
+	task3 := workflow.NewTask(t.Name()+"_3",
+		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
+			taskCtx.AtExit(func(context.Context) {
+				sum *= 7
+			})
+			return nil
+		}), task2,
+	)
+	err := workflow.Run(context.Background(), task3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exp := (2*7 + 5) * 3
+	if sum != exp {
+		t.Fatalf("unexpected sum: want=%d got=%d", exp, sum)
+	}
+}

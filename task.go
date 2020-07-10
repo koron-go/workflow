@@ -125,3 +125,10 @@ func (taskCtx *TaskContext) start(wCtx *workflowContext) {
 func (taskCtx *TaskContext) Name() string {
 	return taskCtx.name
 }
+
+// AtExit adds a runner, it will be called when a workflow exit.
+func (taskCtx *TaskContext) AtExit(r ExitHandler) {
+	taskCtx.wCtx.rw.Lock()
+	taskCtx.wCtx.atExit = append(taskCtx.wCtx.atExit, r)
+	taskCtx.wCtx.rw.Unlock()
+}

@@ -16,6 +16,8 @@ type workflowContext struct {
 	contexts map[*Task]*TaskContext
 	idling   map[*TaskContext]struct{}
 	running  map[*TaskContext]struct{}
+
+	atExit []ExitHandler
 }
 
 func newWorkflowContext(ctx context.Context) *workflowContext {
@@ -90,11 +92,16 @@ func (wCtx *workflowContext) finish() error {
 	wCtx.contexts = nil
 	wCtx.idling = nil
 	wCtx.running = nil
+	wCtx.atExit = nil
 	if len(err.Failed) > 0 || len(err.Idle) > 0 {
 		return err
 	}
 	return nil
 }
+
+// ExitHandler will be called when a workflow exit.  It can be registered by
+// TaskContext.AtExit() function.
+type ExitHandler func(ctx context.Context)
 
 // Run executes a workflow with termination tasks.  All tasks which depended by
 // termination tasks and recursively dependeds will be executed.
@@ -110,5 +117,12 @@ func Run(ctx context.Context, tasks ...*Task) error {
 	wCtx.startTasks()
 	// wait all tasks are stopped.
 	<-wCtx.quit
+	// run all exit runners
+	exitCtx := context.Background()
+	for i := len(wCtx.atExit) - 1; i >= 0; i-- {
+		if h := wCtx.atExit[i]; h != nil {
+			h(exitCtx)
+		}
+	}
 	return wCtx.finish()
 }
