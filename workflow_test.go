@@ -266,6 +266,29 @@ func TestCancelTask(t *testing.T) {
 	}
 }
 
+func TestCancelSelfTask(t *testing.T) {
+	sum := 2
+	var taskMe *workflow.Task
+	task1 := workflow.NewTask(t.Name()+"_1",
+		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
+			sum *= 3
+			taskCtx.CancelTask(taskMe)
+			// this may return context.Canceled if CancelTask is succeeded.
+			// and the test would fail in that case.
+			return taskCtx.Context().Err()
+		}),
+	)
+	taskMe = task1
+	err := workflow.Run(context.Background(), task1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exp := 2 * 3
+	if sum != exp {
+		t.Fatalf("unexpected sum: want=%d got=%d", exp, sum)
+	}
+}
+
 func TestError(t *testing.T) {
 	task1 := workflow.NewTask(t.Name()+"_1",
 		workflow.RunnerFunc(func(*workflow.TaskContext) error {
