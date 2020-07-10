@@ -408,8 +408,8 @@ func TestWithComplete(t *testing.T) {
 		}),
 	)
 	// reverse dependencies with TestSequential. and delay constructed.
-	task1.WhenComlete(task2)
-	task2.WhenComlete(task3)
+	task1.WhenComplete(task2)
+	task2.WhenComplete(task3)
 	err := workflow.Run(context.Background(), task1)
 	if err != nil {
 		t.Fatal(err)

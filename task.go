@@ -23,7 +23,7 @@ func NewTask(name string, runner Runner, requires ...*Task) *Task {
 
 // WhenComplete adds depended tasks, this task will start when those tasks
 // successfully completed.
-func (task *Task) WhenComlete(tasks ...*Task) *Task {
+func (task *Task) WhenComplete(tasks ...*Task) *Task {
 	task.dep.when(onComplete, tasks...)
 	return task
 }
