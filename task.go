@@ -8,15 +8,17 @@ type Task struct {
 
 	runner Runner
 
-	requires []*Task
+	dep dependency
 }
 
 // NewTask creates a new Task object with name and runner.
 func NewTask(name string, runner Runner, requires ...*Task) *Task {
 	return &Task{
-		Name:     name,
-		runner:   runner,
-		requires: requires,
+		Name:   name,
+		runner: runner,
+		dep: dependency{
+			requires: requires,
+		},
 	}
 }
 
@@ -27,22 +29,13 @@ func NewTask(name string, runner Runner, requires ...*Task) *Task {
 //	return task
 //}
 
-func (task *Task) copyRequires() []*Task {
-	if len(task.requires) == 0 {
-		return nil
-	}
-	dst := make([]*Task, len(task.requires))
-	copy(dst, task.requires)
-	return dst
-}
-
 // TaskContext is a context for an executing task.
 type TaskContext struct {
 	wCtx *workflowContext
 
-	name     string
-	runner   Runner
-	requires []*Task
+	name   string
+	runner Runner
+	dep    dependency
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -96,16 +89,6 @@ func (taskCtx *TaskContext) Input(task *Task) (interface{}, error) {
 		return nil, ErrNoOutput
 	}
 	return otherCtx.output, nil
-}
-
-func (taskCtx *TaskContext) canStart(wCtx *workflowContext) bool {
-	for _, req := range taskCtx.requires {
-		reqCtx, ok := wCtx.contexts[req]
-		if ok && (!reqCtx.ended || reqCtx.err != nil) {
-			return false
-		}
-	}
-	return true
 }
 
 func (taskCtx *TaskContext) start(wCtx *workflowContext) {

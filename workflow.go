@@ -37,16 +37,16 @@ func (wCtx *workflowContext) prepareTaskContext(task *Task) *TaskContext {
 		return taskCtx
 	}
 	taskCtx := &TaskContext{
-		wCtx:     wCtx,
-		name:     task.Name,
-		runner:   task.runner,
-		requires: task.copyRequires(),
+		wCtx:   wCtx,
+		name:   task.Name,
+		runner: task.runner,
+		dep:    task.dep.clone(),
 	}
 	wCtx.contexts[task] = taskCtx
 	wCtx.idling[taskCtx] = struct{}{}
-	for _, requireTask := range task.requires {
-		wCtx.prepareTaskContext(requireTask)
-	}
+	task.dep.walk(func(dependedTask *Task) {
+		wCtx.prepareTaskContext(dependedTask)
+	})
 	return taskCtx
 }
 
@@ -63,7 +63,7 @@ func (wCtx *workflowContext) startTasks() {
 	wCtx.rw.Lock()
 	defer wCtx.rw.Unlock()
 	for taskCtx := range wCtx.idling {
-		if !taskCtx.canStart(wCtx) {
+		if !taskCtx.dep.isSatisfy(wCtx) {
 			continue
 		}
 		delete(wCtx.idling, taskCtx)
