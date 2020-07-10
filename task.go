@@ -12,22 +12,28 @@ type Task struct {
 }
 
 // NewTask creates a new Task object with name and runner.
+// new Task will start when all "requires" tasks are successfully completed.
 func NewTask(name string, runner Runner, requires ...*Task) *Task {
 	return &Task{
 		Name:   name,
 		runner: runner,
-		dep: dependency{
-			requires: requires,
-		},
+		dep:    make(dependency).when(onComplete, requires...),
 	}
 }
 
-// Not need yet.
-//// AddRequires adds required tasks to start this taks.
-//func (task *Task) AddRequires(targets []*Task) *Task {
-//	task.requires = append(task.requires, targets...)
-//	return task
-//}
+// WhenComplete adds depended tasks, this task will start when those tasks
+// successfully completed.
+func (task *Task) WhenComlete(tasks ...*Task) *Task {
+	task.dep.when(onComplete, tasks...)
+	return task
+}
+
+// WhenStart adds depended tasks, this task will start when those tasks
+// started.
+func (task *Task) WhenStart(tasks ...*Task) *Task {
+	task.dep.when(onStart, tasks...)
+	return task
+}
 
 // TaskContext is a context for an executing task.
 type TaskContext struct {
@@ -40,8 +46,10 @@ type TaskContext struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
+	started bool
+	ended   bool
+
 	output interface{}
-	ended  bool
 	err    error
 }
 

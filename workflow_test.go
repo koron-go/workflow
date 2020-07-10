@@ -386,3 +386,68 @@ func TestAtExit(t *testing.T) {
 		t.Fatalf("unexpected sum: want=%d got=%d", exp, sum)
 	}
 }
+
+func TestWithComplete(t *testing.T) {
+	sum := 2
+	task1 := workflow.NewTask(t.Name()+"_1",
+		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+			sum *= 3
+			return nil
+		}),
+	)
+	task2 := workflow.NewTask(t.Name()+"_2",
+		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+			sum += 5
+			return nil
+		}),
+	)
+	task3 := workflow.NewTask(t.Name()+"_3",
+		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+			sum *= 7
+			return nil
+		}),
+	)
+	// reverse dependencies with TestSequential. and delay constructed.
+	task1.WhenComlete(task2)
+	task2.WhenComlete(task3)
+	err := workflow.Run(context.Background(), task1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exp := (2*7 + 5) * 3
+	if sum != exp {
+		t.Fatalf("unexpected sum: want=%d got=%d", exp, sum)
+	}
+}
+
+func TestWithStart(t *testing.T) {
+	//  * task1 -> (start) -> task2
+	//  * task2 -> (end) -> task3
+	sum := 2
+	task1 := workflow.NewTask(t.Name()+"_1",
+		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+			sum += 3
+			return nil
+		}),
+	)
+	task2 := workflow.NewTask(t.Name()+"_2",
+		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+			sum += 5
+			return nil
+		}),
+	).WhenStart(task1)
+	task3 := workflow.NewTask(t.Name()+"_3",
+		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+			sum += 7
+			return nil
+		}), task2,
+	)
+	err := workflow.Run(context.Background(), task3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exp := 2 + 3 + 5 + 7
+	if sum != exp {
+		t.Fatalf("unexpected sum: want=%d got=%d", exp, sum)
+	}
+}

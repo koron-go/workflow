@@ -62,13 +62,21 @@ func (wCtx *workflowContext) taskCompleted(taskCtx *TaskContext, err error) {
 func (wCtx *workflowContext) startTasks() {
 	wCtx.rw.Lock()
 	defer wCtx.rw.Unlock()
-	for taskCtx := range wCtx.idling {
-		if !taskCtx.dep.isSatisfy(wCtx) {
-			continue
+	for {
+		started := 0
+		for taskCtx := range wCtx.idling {
+			if !taskCtx.dep.isSatisfy(wCtx) {
+				continue
+			}
+			delete(wCtx.idling, taskCtx)
+			wCtx.running[taskCtx] = struct{}{}
+			go taskCtx.start(wCtx)
+			taskCtx.started = true
+			started++
 		}
-		delete(wCtx.idling, taskCtx)
-		wCtx.running[taskCtx] = struct{}{}
-		go taskCtx.start(wCtx)
+		if started == 0 {
+			break
+		}
 	}
 	if len(wCtx.running) > 0 {
 		return
