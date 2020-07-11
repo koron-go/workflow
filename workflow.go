@@ -31,14 +31,10 @@ func (wCtx *workflowContext) prepareTaskContext(task *Task) *TaskContext {
 	if taskCtx, ok := wCtx.contexts[task]; ok {
 		return taskCtx
 	}
-	runner := task.runner
-	if runner == nil {
-		runner = nullRunner{}
-	}
 	taskCtx := &TaskContext{
 		wCtx:   wCtx,
 		name:   task.Name,
-		runner: task.runner,
+		runner: task.getRunner(),
 		dep:    task.dep.clone(),
 	}
 	wCtx.contexts[task] = taskCtx
@@ -131,14 +127,9 @@ func (wCtx *workflowContext) Wait(ctx context.Context) error {
 }
 
 // Run executes a workflow with termination tasks.  All tasks which depended by
-// termination tasks and recursively dependeds will be executed.
+// termination tasks and recursively depended tasks will be executed.
 func Run(ctx context.Context, tasks ...*Task) error {
-	w := New(tasks...)
-	c, err := w.Start(ctx)
-	if err != nil {
-		return err
-	}
-	return c.Wait(context.Background())
+	return New(tasks...).Run(ctx)
 }
 
 // Workflow represents a workflow definition.
@@ -152,6 +143,16 @@ func New(tasks ...*Task) *Workflow {
 	return &Workflow{
 		tasks: tasks,
 	}
+}
+
+// Run executes a workflow with its definition.  All tasks which depended by
+// termination tasks and recursively depended tasks will be executed.
+func (w *Workflow) Run(ctx context.Context) error {
+	c, err := w.Start(ctx)
+	if err != nil {
+		return err
+	}
+	return c.Wait(context.Background())
 }
 
 // SetLogger sets logger which log task's start/end logs.

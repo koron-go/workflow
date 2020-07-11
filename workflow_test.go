@@ -1,9 +1,12 @@
 package workflow_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 
@@ -530,5 +533,157 @@ func TestWhenEnd(t *testing.T) {
 	expErr := `workflow failed: 0 tasks not run, 1 tasks have error`
 	if s := err.Error(); s != expErr {
 		t.Fatalf("unexpected error:\nwant=%s\ngot=%s", expErr, s)
+	}
+}
+
+func TestWorkflow_Add(t *testing.T) {
+	sum := 2
+	task1 := workflow.NewTask(t.Name()+"_1",
+		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+			sum *= 3
+			return nil
+		}),
+	)
+	task2 := workflow.NewTask(t.Name()+"_2",
+		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+			sum += 5
+			return nil
+		}), task1,
+	)
+	task3 := workflow.NewTask(t.Name()+"_3",
+		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+			sum *= 7
+			return nil
+		}), task2,
+	)
+	err := workflow.New().Add(task3).Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	exp := (2*3 + 5) * 7
+	if sum != exp {
+		t.Fatalf("unexpected sum: want=%d got=%d", exp, sum)
+	}
+}
+
+func TestWorkflow_SecondWait(t *testing.T) {
+	sum := 2
+	task1 := workflow.NewTask(t.Name()+"_1",
+		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+			sum *= 3
+			return nil
+		}),
+	)
+	wx, err := workflow.New(task1).Start(context.Background())
+	if err != nil {
+		t.Fatalf("failed to start: %s", err)
+	}
+	err = wx.Wait(context.Background())
+	if err != nil {
+		t.Fatalf("failed to 1st wait: %s", err)
+	}
+	err = wx.Wait(context.Background())
+	if err != nil {
+		t.Fatalf("failed to 2nd wait: %s", err)
+	}
+	exp := 2 * 3
+	if sum != exp {
+		t.Fatalf("unexpected sum: want=%d got=%d", exp, sum)
+	}
+}
+
+func TestWorkflow_DoubleWait(t *testing.T) {
+	sum := 2
+	task1 := workflow.NewTask(t.Name()+"_1",
+		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+			sum *= 3
+			time.Sleep(10 * time.Millisecond)
+			return nil
+		}),
+	)
+	wx, err := workflow.New(task1).Start(context.Background())
+	if err != nil {
+		t.Fatalf("failed to start: %s", err)
+	}
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		err = wx.Wait(context.Background())
+		if err != nil {
+			t.Errorf("failed to 1st wait: %s", err)
+		}
+		sum += 5
+	}()
+	go func() {
+		defer wg.Done()
+		err = wx.Wait(context.Background())
+		if err != nil {
+			t.Errorf("failed to 2nd wait: %s", err)
+		}
+		sum += 7
+	}()
+	wg.Wait()
+	exp := 2*3 + 5 + 7
+	if sum != exp {
+		t.Fatalf("unexpected sum: want=%d got=%d", exp, sum)
+	}
+}
+
+func TestLogger(t *testing.T) {
+	sum := 2
+	task1 := workflow.NewTask(t.Name()+"_1",
+		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+			sum *= 3
+			return nil
+		}),
+	)
+	w := workflow.New(task1)
+
+	// 1st attempt with valid logger.
+	bb := &bytes.Buffer{}
+	l := log.New(bb, "", 0)
+	err := w.SetLogger(l).Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	exp := 2 * 3
+	if sum != exp {
+		t.Fatalf("unexpected sum: want=%d got=%d", exp, sum)
+	}
+	expLog := "[workflow.task:TestLogger_1] start\n[workflow.task:TestLogger_1] end\n"
+	if s := bb.String(); s != expLog {
+		t.Fatalf("unexpected log:\nwant=%q\ngot=%q", expLog, s)
+	}
+
+	// 2nd attempt with nil logger (fallback to discardLogger).
+	bb.Reset()
+	err = w.SetLogger(nil).Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	exp = 2 * 3 * 3
+	if sum != exp {
+		t.Fatalf("unexpected sum: want=%d got=%d", exp, sum)
+	}
+	// logger in 1st atttempt is not used anymore.
+	expLog = ""
+	if s := bb.String(); s != expLog {
+		t.Fatalf("unexpected log:\nwant=%q\ngot=%q", expLog, s)
+	}
+}
+
+func TestNilRunner(t *testing.T) {
+	task1 := workflow.NewTask(t.Name()+"_1", nil)
+	w := workflow.New(task1)
+	bb := &bytes.Buffer{}
+	l := log.New(bb, "", 0)
+	err := w.SetLogger(l).Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	exp := "[workflow.task:TestNilRunner_1] start\n[workflow.task:TestNilRunner_1] end\n"
+	if s := bb.String(); s != exp {
+		t.Fatalf("unexpected log:\nwant=%q\ngot=%q", exp, s)
 	}
 }

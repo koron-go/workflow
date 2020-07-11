@@ -41,6 +41,13 @@ func (task *Task) WhenEnd(tasks ...*Task) *Task {
 	return task
 }
 
+func (task *Task) getRunner() Runner {
+	if task.runner == nil {
+		return nullRunner{}
+	}
+	return task.runner
+}
+
 // TaskContext is a context for an executing task.
 type TaskContext struct {
 	wCtx *workflowContext
