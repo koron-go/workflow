@@ -105,17 +105,13 @@ func (taskCtx *TaskContext) Input(task *Task) (interface{}, error) {
 	return otherCtx.output, nil
 }
 
-func (taskCtx *TaskContext) start(wCtx *workflowContext) {
+func (taskCtx *TaskContext) runTask(wCtx *workflowContext) {
 	taskCtx.ctx, taskCtx.cancel = context.WithCancel(wCtx.ctx)
 	defer taskCtx.cancel()
-	if r := taskCtx.runner; r != nil {
-		err := r.Run(taskCtx)
-		if err != nil {
-			wCtx.taskCompleted(taskCtx, err)
-			return
-		}
-	}
-	wCtx.taskCompleted(taskCtx, nil)
+	taskCtx.wCtx.log.Printf("[workflow.task:%s] start", taskCtx.name)
+	err := taskCtx.runner.Run(taskCtx)
+	taskCtx.wCtx.log.Printf("[workflow.task:%s] end", taskCtx.name)
+	wCtx.taskCompleted(taskCtx, err)
 }
 
 // Name returns name of Task.

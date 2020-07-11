@@ -3,12 +3,15 @@ package workflow
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 )
 
 // workflowContext is a context for an executing workflow.
 type workflowContext struct {
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	log Logger
 
 	rw   sync.RWMutex
 	quit chan struct{}
@@ -18,23 +21,19 @@ type workflowContext struct {
 	running  map[*TaskContext]struct{}
 
 	atExit []ExitHandler
-}
 
-func newWorkflowContext(ctx context.Context) *workflowContext {
-	ctx, cancel := context.WithCancel(ctx)
-	return &workflowContext{
-		ctx:      ctx,
-		cancel:   cancel,
-		quit:     make(chan struct{}),
-		contexts: make(map[*Task]*TaskContext),
-		idling:   make(map[*TaskContext]struct{}),
-		running:  make(map[*TaskContext]struct{}),
-	}
+	waitMu sync.Mutex
+	waitDo int32
+	err    error
 }
 
 func (wCtx *workflowContext) prepareTaskContext(task *Task) *TaskContext {
 	if taskCtx, ok := wCtx.contexts[task]; ok {
 		return taskCtx
+	}
+	runner := task.runner
+	if runner == nil {
+		runner = nullRunner{}
 	}
 	taskCtx := &TaskContext{
 		wCtx:   wCtx,
@@ -70,7 +69,7 @@ func (wCtx *workflowContext) startTasks() {
 			}
 			delete(wCtx.idling, taskCtx)
 			wCtx.running[taskCtx] = struct{}{}
-			go taskCtx.start(wCtx)
+			go taskCtx.runTask(wCtx)
 			taskCtx.started = true
 			started++
 		}
@@ -107,30 +106,96 @@ func (wCtx *workflowContext) finish() error {
 	return nil
 }
 
-// ExitHandler will be called when a workflow exit.  It can be registered by
-// TaskContext.AtExit() function.
-type ExitHandler func(ctx context.Context)
+// Wait waits all tasks are terminated.
+func (wCtx *workflowContext) Wait(ctx context.Context) error {
+	if atomic.LoadInt32(&wCtx.waitDo) == 1 {
+		return wCtx.err
+	}
+	wCtx.waitMu.Lock()
+	defer wCtx.waitMu.Unlock()
+	if wCtx.waitDo == 1 {
+		return wCtx.err
+	}
+	// wait all tasks are stopped.
+	<-wCtx.quit
+	// run all exit runners
+	for i := len(wCtx.atExit) - 1; i >= 0; i-- {
+		if h := wCtx.atExit[i]; h != nil {
+			h(ctx)
+		}
+	}
+	wCtx.err = wCtx.finish()
+	atomic.StoreInt32(&wCtx.waitDo, 1)
+	wCtx.cancel()
+	return wCtx.err
+}
 
 // Run executes a workflow with termination tasks.  All tasks which depended by
 // termination tasks and recursively dependeds will be executed.
 func Run(ctx context.Context, tasks ...*Task) error {
-	if len(tasks) == 0 {
-		return ErrNoTasks
+	w := New(tasks...)
+	c, err := w.Start(ctx)
+	if err != nil {
+		return err
 	}
-	wCtx := newWorkflowContext(ctx)
-	defer wCtx.cancel()
-	for _, task := range tasks {
+	return c.Wait(context.Background())
+}
+
+// Workflow represents a workflow definition.
+type Workflow struct {
+	tasks []*Task
+	log   Logger
+}
+
+// New create a workflow definition with terminal tasks.
+func New(tasks ...*Task) *Workflow {
+	return &Workflow{
+		tasks: tasks,
+	}
+}
+
+// SetLogger sets logger which log task's start/end logs.
+// *log.Logger can be used for logger.
+func (w *Workflow) SetLogger(log Logger) *Workflow {
+	if log == nil {
+		log = discardLogger{}
+	}
+	w.log = log
+	return w
+}
+
+// Add adds terminal tasks.
+func (w *Workflow) Add(tasks ...*Task) *Workflow {
+	w.tasks = append(w.tasks, tasks...)
+	return w
+}
+
+// Start starts a workflow.
+func (w *Workflow) Start(ctx context.Context) (Context, error) {
+	if len(w.tasks) == 0 {
+		return nil, ErrNoTasks
+	}
+	wCtx := w.newContext(ctx)
+	for _, task := range w.tasks {
 		wCtx.prepareTaskContext(task)
 	}
 	wCtx.startTasks()
-	// wait all tasks are stopped.
-	<-wCtx.quit
-	// run all exit runners
-	exitCtx := context.Background()
-	for i := len(wCtx.atExit) - 1; i >= 0; i-- {
-		if h := wCtx.atExit[i]; h != nil {
-			h(exitCtx)
-		}
+	return wCtx, nil
+}
+
+func (w *Workflow) newContext(ctx context.Context) *workflowContext {
+	ctx, cancel := context.WithCancel(ctx)
+	log := w.log
+	if log == nil {
+		log = discardLogger{}
 	}
-	return wCtx.finish()
+	return &workflowContext{
+		ctx:      ctx,
+		cancel:   cancel,
+		log:      log,
+		quit:     make(chan struct{}),
+		contexts: make(map[*Task]*TaskContext),
+		idling:   make(map[*TaskContext]struct{}),
+		running:  make(map[*TaskContext]struct{}),
+	}
 }
