@@ -33,7 +33,7 @@ func (wCtx *workflowContext) prepareTaskContext(task *Task) *TaskContext {
 	}
 	taskCtx := &TaskContext{
 		wCtx:   wCtx,
-		name:   task.Name,
+		name:   task.name,
 		runner: task.getRunner(),
 		dep:    task.dep.clone(),
 	}

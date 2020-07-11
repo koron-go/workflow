@@ -4,7 +4,7 @@ import "context"
 
 // Task represents a task of workflow.
 type Task struct {
-	Name string
+	name string
 
 	runner Runner
 
@@ -15,10 +15,27 @@ type Task struct {
 // new Task will start when all "requires" tasks are successfully completed.
 func NewTask(name string, runner Runner, requires ...*Task) *Task {
 	return &Task{
-		Name:   name,
+		name:   name,
 		runner: runner,
 		dep:    make(dependency).when(onComplete, requires...),
 	}
+}
+
+// Name returns name of task.
+func (task *Task) Name() string {
+	return task.name
+}
+
+// WithName changes name of task.
+func (task *Task) WithName(name string) *Task {
+	task.name = name
+	return task
+}
+
+// WithRunner changes runner of task
+func (task *Task) WithRunner(runner Runner) *Task {
+	task.runner = runner
+	return task
 }
 
 // WhenComplete adds depended tasks, this task will start when those tasks
