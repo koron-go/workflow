@@ -4,20 +4,20 @@ import "context"
 
 // Runner provides a procedure of Task.
 type Runner interface {
-	Run(*TaskContext) error
+	Run(context.Context) error
 }
 
 // RunnerFunc is function wrapper for Runner.
-type RunnerFunc func(*TaskContext) error
+type RunnerFunc func(context.Context) error
 
 // Run runs procedure of Task.
-func (fn RunnerFunc) Run(taskCtx *TaskContext) error {
-	return fn(taskCtx)
+func (fn RunnerFunc) Run(ctx context.Context) error {
+	return fn(ctx)
 }
 
 type nullRunner struct{}
 
-func (nullRunner) Run(*TaskContext) error {
+func (nullRunner) Run(context.Context) error {
 	return nil
 }
 

@@ -21,7 +21,7 @@ func TestTask_Name(t *testing.T) {
 func TestTask_WithRunner(t *testing.T) {
 	sum := 2
 	task := workflow.NewTask(t.Name()+"_1",
-		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+		workflow.RunnerFunc(func(context.Context) error {
 			sum *= 3
 			return nil
 		}),
@@ -38,9 +38,20 @@ func TestTask_WithRunner(t *testing.T) {
 	}
 	runTask(2 * 3)
 	// update runner of task
-	task.WithRunner(workflow.RunnerFunc(func(*workflow.TaskContext) error {
+	task.WithRunner(workflow.RunnerFunc(func(context.Context) error {
 		sum += 5
 		return nil
 	}))
 	runTask(2*3 + 5)
+}
+
+func TestMustGetTaskContextPanic(t *testing.T) {
+	defer func() {
+		v := recover()
+		if s, ok := v.(string); ok && s == "context.Context didn't bind to *workflow.TaskContext" {
+			return
+		}
+		t.Fatalf("unexpected result, recover() returns: %v", v)
+	}()
+	_ = workflow.MustGetTaskContext(context.Background())
 }
