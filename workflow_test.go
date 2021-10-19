@@ -6,7 +6,6 @@ import (
 	"errors"
 	"log"
 	"reflect"
-	"sync"
 	"testing"
 	"time"
 
@@ -271,7 +270,7 @@ func TestAtExitPanic(t *testing.T) {
 		if s, ok := v.(string); ok && s == "context.Context didn't bind to workflow context" {
 			return
 		}
-		t.Fatalf("unexpected result, recover() returns: %v", v)
+		t.Fatalf("unexpected recover() returns: %v", v)
 	}()
 	workflow.AtExit(context.Background(), nil)
 }
@@ -326,14 +325,14 @@ func TestOutputInput(t *testing.T) {
 	task1 := workflow.NewTask(t.Name()+"_1",
 		workflow.RunnerFunc(func(ctx context.Context) error {
 			sum *= 3
-			workflow.SetResult(ctx, sum)
+			workflow.TaskSetResult(ctx, sum)
 			return nil
 		}),
 	)
 	task2 := workflow.NewTask(t.Name()+"_2",
 		workflow.RunnerFunc(func(ctx context.Context) error {
 			sum += 5
-			workflow.SetResult(ctx, sum)
+			workflow.TaskSetResult(ctx, sum)
 			return nil
 		}), task1,
 	)
@@ -568,70 +567,6 @@ func TestWorkflow_Add(t *testing.T) {
 		t.Fatal(err)
 	}
 	exp := (2*3 + 5) * 7
-	if sum != exp {
-		t.Fatalf("unexpected sum: want=%d got=%d", exp, sum)
-	}
-}
-
-func TestWorkflow_SecondWait(t *testing.T) {
-	sum := 2
-	task1 := workflow.NewTask(t.Name()+"_1",
-		workflow.RunnerFunc(func(context.Context) error {
-			sum *= 3
-			return nil
-		}),
-	)
-	wx, err := workflow.New(task1).Start(context.Background())
-	if err != nil {
-		t.Fatalf("failed to start: %s", err)
-	}
-	err = wx.Wait(context.Background())
-	if err != nil {
-		t.Fatalf("failed to 1st wait: %s", err)
-	}
-	err = wx.Wait(context.Background())
-	if err != nil {
-		t.Fatalf("failed to 2nd wait: %s", err)
-	}
-	exp := 2 * 3
-	if sum != exp {
-		t.Fatalf("unexpected sum: want=%d got=%d", exp, sum)
-	}
-}
-
-func TestWorkflow_DoubleWait(t *testing.T) {
-	sum := 2
-	task1 := workflow.NewTask(t.Name()+"_1",
-		workflow.RunnerFunc(func(context.Context) error {
-			sum *= 3
-			time.Sleep(10 * time.Millisecond)
-			return nil
-		}),
-	)
-	wx, err := workflow.New(task1).Start(context.Background())
-	if err != nil {
-		t.Fatalf("failed to start: %s", err)
-	}
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		err = wx.Wait(context.Background())
-		if err != nil {
-			t.Errorf("failed to 1st wait: %s", err)
-		}
-		sum += 5
-	}()
-	go func() {
-		defer wg.Done()
-		err = wx.Wait(context.Background())
-		if err != nil {
-			t.Errorf("failed to 2nd wait: %s", err)
-		}
-		sum += 7
-	}()
-	wg.Wait()
-	exp := 2*3 + 5 + 7
 	if sum != exp {
 		t.Fatalf("unexpected sum: want=%d got=%d", exp, sum)
 	}

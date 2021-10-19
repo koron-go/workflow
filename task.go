@@ -86,14 +86,15 @@ type taskKey struct{}
 
 var taskKey0 taskKey
 
-func (taskCtx *taskContext) runTask(wCtx *workflowContext) {
+func (taskCtx *taskContext) runTask(ctx context.Context) {
+	wCtx := mustGetWorkflowContext(ctx)
 	ctx0, cancel := context.WithCancel(wCtx.ctx)
 	defer cancel()
-	ctx := context.WithValue(ctx0, taskKey0, taskCtx)
+	ctx1 := context.WithValue(ctx0, taskKey0, taskCtx)
 	taskCtx.cancel = cancel
-	taskCtx.wCtx.log.Printf("[workflow.task:%s] start", taskCtx.name)
-	err := taskCtx.runner.Run(ctx)
-	taskCtx.wCtx.log.Printf("[workflow.task:%s] end", taskCtx.name)
+	wCtx.log.Printf("[workflow.task:%s] start", taskCtx.name)
+	err := taskCtx.runner.Run(ctx1)
+	wCtx.log.Printf("[workflow.task:%s] end", taskCtx.name)
 	wCtx.taskCompleted(taskCtx, err)
 }
 
@@ -108,36 +109,19 @@ func getTaskContext(ctx context.Context) (*taskContext, bool) {
 func mustGetTaskContext(ctx context.Context) *taskContext {
 	taskCtx, ok := getTaskContext(ctx)
 	if !ok {
-		panic("context.Context didn't bind to *workflow.TaskContext")
+		panic("context.Context didn't bind to any tasks")
 	}
 	return taskCtx
 }
 
 // TaskName returns name of task which corresponding context.
 func TaskName(ctx context.Context) string {
-	taskCtx, ok := getTaskContext(ctx)
-	if !ok {
-		return "" // no task context binded
-	}
+	taskCtx := mustGetTaskContext(ctx)
 	return taskCtx.name
 }
 
-// CancelTask cancels another tasks in a workflow.
-// This can't cancel myself nor tasks not in a workflow.
-func CancelTask(ctx context.Context, tasks ...*Task) {
-	taskCtx := mustGetTaskContext(ctx)
-	wCtx := mustGetWorkflowContext(ctx)
-	for _, task := range tasks {
-		otherCtx, ok := wCtx.contexts[task]
-		if !ok || otherCtx == taskCtx {
-			continue
-		}
-		otherCtx.cancel()
-	}
-}
-
-// SetResult sets result value of a task which corresponding to context.
-func SetResult(ctx context.Context, v interface{}) {
+// TaskSetResult sets result value of a task which corresponding to context.
+func TaskSetResult(ctx context.Context, v interface{}) {
 	wCtx := mustGetWorkflowContext(ctx)
 	wCtx.rw.Lock()
 	taskCtx := mustGetTaskContext(ctx)

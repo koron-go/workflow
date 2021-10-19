@@ -46,8 +46,30 @@ func TestTask_WithRunner(t *testing.T) {
 }
 
 func TestNameWithoutTask(t *testing.T) {
-	s := workflow.TaskName(context.Background())
-	if s != "" {
-		t.Errorf("unexpecetd, workflow.TaskName() returns: %q", s)
+	defer func() {
+		v := recover()
+		if s, ok := v.(string); ok && s == "context.Context didn't bind to any tasks" {
+			return
+		}
+		t.Fatalf("unexpected recover() returns: %v", v)
+	}()
+	_ = workflow.TaskName(context.Background())
+}
+
+func TestResultWithoutWorkflows(t *testing.T) {
+	_, err := workflow.Result(context.Background(), nil)
+	if err != workflow.ErrNoWorkflows {
+		t.Errorf("unexpected error: %v", err)
 	}
+}
+
+func TestCancelTaskWithoutTask(t *testing.T) {
+	defer func() {
+		v := recover()
+		if s, ok := v.(string); ok && s == "context.Context didn't bind to workflow context" {
+			return
+		}
+		t.Fatalf("unexpected recover() returns: %v", v)
+	}()
+	workflow.CancelTask(context.Background())
 }

@@ -3,7 +3,6 @@ package workflow
 import (
 	"context"
 	"sync"
-	"sync/atomic"
 )
 
 // workflowContext is a context for an executing workflow.
@@ -21,10 +20,6 @@ type workflowContext struct {
 	running  map[*taskContext]struct{}
 
 	atExit []ExitHandler
-
-	waitMu sync.Mutex
-	waitDo int32
-	err    error
 }
 
 func (wCtx *workflowContext) prepareTaskContext(task *Task) *taskContext {
@@ -65,7 +60,7 @@ func (wCtx *workflowContext) startTasks() {
 			}
 			delete(wCtx.idling, taskCtx)
 			wCtx.running[taskCtx] = struct{}{}
-			go taskCtx.runTask(wCtx)
+			go taskCtx.runTask(wCtx.ctx)
 			taskCtx.started = true
 			started++
 		}
@@ -81,6 +76,7 @@ func (wCtx *workflowContext) startTasks() {
 }
 
 func (wCtx *workflowContext) finish() error {
+	defer wCtx.cancel()
 	err := &Error{
 		Failed: make(map[*Task]error),
 	}
@@ -102,16 +98,8 @@ func (wCtx *workflowContext) finish() error {
 	return nil
 }
 
-// Wait waits all tasks are terminated.
-func (wCtx *workflowContext) Wait(ctx context.Context) error {
-	if atomic.LoadInt32(&wCtx.waitDo) == 1 {
-		return wCtx.err
-	}
-	wCtx.waitMu.Lock()
-	defer wCtx.waitMu.Unlock()
-	if wCtx.waitDo == 1 {
-		return wCtx.err
-	}
+// wait waits all tasks are terminated.
+func (wCtx *workflowContext) wait(ctx context.Context) error {
 	// wait all tasks are stopped.
 	<-wCtx.quit
 	// run all exit runners
@@ -120,10 +108,7 @@ func (wCtx *workflowContext) Wait(ctx context.Context) error {
 			h(ctx)
 		}
 	}
-	wCtx.err = wCtx.finish()
-	atomic.StoreInt32(&wCtx.waitDo, 1)
-	wCtx.cancel()
-	return wCtx.err
+	return wCtx.finish()
 }
 
 // Run executes a workflow with termination tasks.  All tasks which depended by
@@ -148,11 +133,11 @@ func New(tasks ...*Task) *Workflow {
 // Run executes a workflow with its definition.  All tasks which depended by
 // termination tasks and recursively depended tasks will be executed.
 func (w *Workflow) Run(ctx context.Context) error {
-	c, err := w.Start(ctx)
+	c, err := w.start(ctx)
 	if err != nil {
 		return err
 	}
-	return c.Wait(context.Background())
+	return c.wait(context.Background())
 }
 
 // SetLogger sets logger which log task's start/end logs.
@@ -171,8 +156,8 @@ func (w *Workflow) Add(tasks ...*Task) *Workflow {
 	return w
 }
 
-// Start starts a workflow.
-func (w *Workflow) Start(ctx context.Context) (Context, error) {
+// start starts a workflow.
+func (w *Workflow) start(ctx context.Context) (*workflowContext, error) {
 	if len(w.tasks) == 0 {
 		return nil, ErrNoTasks
 	}
@@ -231,4 +216,18 @@ func AtExit(ctx context.Context, h ExitHandler) {
 func Cancel(ctx context.Context) {
 	wCtx := mustGetWorkflowContext(ctx)
 	wCtx.cancel()
+}
+
+// CancelTask cancels another tasks in a workflow.
+// This can't cancel myself nor tasks not in a workflow.
+func CancelTask(ctx context.Context, tasks ...*Task) {
+	wCtx := mustGetWorkflowContext(ctx)
+	taskCtx, _ := getTaskContext(ctx)
+	for _, task := range tasks {
+		otherCtx, ok := wCtx.contexts[task]
+		if !ok || (taskCtx != nil && otherCtx == taskCtx) {
+			continue
+		}
+		otherCtx.cancel()
+	}
 }
