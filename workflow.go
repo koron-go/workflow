@@ -184,14 +184,17 @@ func (w *Workflow) Start(ctx context.Context) (Context, error) {
 	return wCtx, nil
 }
 
+type workflowKeyType struct{}
+
+var workflowKey workflowKeyType
+
 func (w *Workflow) newContext(ctx context.Context) *workflowContext {
 	ctx, cancel := context.WithCancel(ctx)
 	log := w.log
 	if log == nil {
 		log = discardLogger{}
 	}
-	return &workflowContext{
-		ctx:      ctx,
+	wCtx := &workflowContext{
 		cancel:   cancel,
 		log:      log,
 		quit:     make(chan struct{}),
@@ -199,4 +202,22 @@ func (w *Workflow) newContext(ctx context.Context) *workflowContext {
 		idling:   make(map[*TaskContext]struct{}),
 		running:  make(map[*TaskContext]struct{}),
 	}
+	wCtx.ctx = context.WithValue(ctx, workflowKey, wCtx)
+	return wCtx
+}
+
+func mustGetWorkflowContext(ctx context.Context) *workflowContext {
+	wCtx, ok := ctx.Value(workflowKey).(*workflowContext)
+	if !ok {
+		panic("context.Context didn't bind to workflow context")
+	}
+	return wCtx
+}
+
+// AtExit adds a handler, it will be called when a workflow exit.
+func AtExit(ctx context.Context, h ExitHandler) {
+	wCtx := mustGetWorkflowContext(ctx)
+	wCtx.rw.Lock()
+	wCtx.atExit = append(wCtx.atExit, h)
+	wCtx.rw.Unlock()
 }

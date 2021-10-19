@@ -410,8 +410,7 @@ func TestAtExit(t *testing.T) {
 	sum := 2
 	task1 := workflow.NewTask(t.Name()+"_1",
 		workflow.RunnerFunc(func(ctx context.Context) error {
-			taskCtx := workflow.MustGetTaskContext(ctx)
-			taskCtx.AtExit(func(context.Context) {
+			workflow.AtExit(ctx, func(context.Context) {
 				sum *= 3
 			})
 			return nil
@@ -419,8 +418,7 @@ func TestAtExit(t *testing.T) {
 	)
 	task2 := workflow.NewTask(t.Name()+"_2",
 		workflow.RunnerFunc(func(ctx context.Context) error {
-			taskCtx := workflow.MustGetTaskContext(ctx)
-			taskCtx.AtExit(func(context.Context) {
+			workflow.AtExit(ctx, func(context.Context) {
 				sum += 5
 			})
 			return nil
@@ -428,8 +426,7 @@ func TestAtExit(t *testing.T) {
 	)
 	task3 := workflow.NewTask(t.Name()+"_3",
 		workflow.RunnerFunc(func(ctx context.Context) error {
-			taskCtx := workflow.MustGetTaskContext(ctx)
-			taskCtx.AtExit(func(context.Context) {
+			workflow.AtExit(ctx, func(context.Context) {
 				sum *= 7
 			})
 			return nil
