@@ -14,6 +14,9 @@ var ErrNoOutput = errors.New("task did't provide output")
 // ErrNotInWorkflow happens when a task is not in workflow.
 var ErrNotInWorkflow = errors.New("task is not in workflow")
 
+// ErrNoWorkflows happens when no workflows in context.
+var ErrNoWorkflows = errors.New("no workflows")
+
 // Error wraps errors happen in each tasks, and not executed tasks.
 type Error struct {
 	// Idle has tasks which not executed.

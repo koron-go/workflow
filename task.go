@@ -65,8 +65,8 @@ func (task *Task) getRunner() Runner {
 	return task.runner
 }
 
-// TaskContext is a context for an executing task.
-type TaskContext struct {
+// taskContext is a context for an executing task.
+type taskContext struct {
 	wCtx *workflowContext
 
 	name   string
@@ -82,16 +82,53 @@ type TaskContext struct {
 	err    error
 }
 
-// CancelWorkflow cancels a workflow, which current task belongs.
-func (taskCtx *TaskContext) CancelWorkflow() {
-	taskCtx.wCtx.cancel()
+type taskKey struct{}
+
+var taskKey0 taskKey
+
+func (taskCtx *taskContext) runTask(wCtx *workflowContext) {
+	ctx0, cancel := context.WithCancel(wCtx.ctx)
+	defer cancel()
+	ctx := context.WithValue(ctx0, taskKey0, taskCtx)
+	taskCtx.cancel = cancel
+	taskCtx.wCtx.log.Printf("[workflow.task:%s] start", taskCtx.name)
+	err := taskCtx.runner.Run(ctx)
+	taskCtx.wCtx.log.Printf("[workflow.task:%s] end", taskCtx.name)
+	wCtx.taskCompleted(taskCtx, err)
+}
+
+// getTaskContext extracts task context from binded context.Context
+func getTaskContext(ctx context.Context) (*taskContext, bool) {
+	taskCtx, ok := ctx.Value(taskKey0).(*taskContext)
+	return taskCtx, ok
+}
+
+// mustGetTaskContext extracts task context from binded context.Context.
+// If context.Context doesn't have context.Context this will panic.
+func mustGetTaskContext(ctx context.Context) *taskContext {
+	taskCtx, ok := getTaskContext(ctx)
+	if !ok {
+		panic("context.Context didn't bind to *workflow.TaskContext")
+	}
+	return taskCtx
+}
+
+// TaskName returns name of task which corresponding context.
+func TaskName(ctx context.Context) string {
+	taskCtx, ok := getTaskContext(ctx)
+	if !ok {
+		return "" // no task context binded
+	}
+	return taskCtx.name
 }
 
 // CancelTask cancels another tasks in a workflow.
 // This can't cancel myself nor tasks not in a workflow.
-func (taskCtx *TaskContext) CancelTask(tasks ...*Task) {
+func CancelTask(ctx context.Context, tasks ...*Task) {
+	taskCtx := mustGetTaskContext(ctx)
+	wCtx := mustGetWorkflowContext(ctx)
 	for _, task := range tasks {
-		otherCtx, ok := taskCtx.wCtx.contexts[task]
+		otherCtx, ok := wCtx.contexts[task]
 		if !ok || otherCtx == taskCtx {
 			continue
 		}
@@ -99,18 +136,24 @@ func (taskCtx *TaskContext) CancelTask(tasks ...*Task) {
 	}
 }
 
-// SetOutput sets output data of a Task.
-func (taskCtx *TaskContext) SetOutput(v interface{}) {
-	taskCtx.wCtx.rw.Lock()
+// SetResult sets result value of a task which corresponding to context.
+func SetResult(ctx context.Context, v interface{}) {
+	wCtx := mustGetWorkflowContext(ctx)
+	wCtx.rw.Lock()
+	taskCtx := mustGetTaskContext(ctx)
 	taskCtx.output = v
-	taskCtx.wCtx.rw.Unlock()
+	wCtx.rw.Unlock()
 }
 
-// Input gets output of another task in a workflow.
-func (taskCtx *TaskContext) Input(task *Task) (interface{}, error) {
-	taskCtx.wCtx.rw.RLock()
-	defer taskCtx.wCtx.rw.RUnlock()
-	otherCtx, ok := taskCtx.wCtx.contexts[task]
+// Result gets result value of completed task in a workflow.
+func Result(ctx context.Context, task *Task) (interface{}, error) {
+	wCtx, ok := getWorkflowContext(ctx)
+	if !ok {
+		return nil, ErrNoWorkflows
+	}
+	wCtx.rw.RLock()
+	defer wCtx.rw.RUnlock()
+	otherCtx, ok := wCtx.contexts[task]
 	if !ok {
 		return nil, ErrNotInWorkflow
 	}
@@ -121,40 +164,4 @@ func (taskCtx *TaskContext) Input(task *Task) (interface{}, error) {
 		return nil, ErrNoOutput
 	}
 	return otherCtx.output, nil
-}
-
-type taskKeyType struct{}
-
-var taskKey taskKeyType
-
-func (taskCtx *TaskContext) runTask(wCtx *workflowContext) {
-	ctx0, cancel := context.WithCancel(wCtx.ctx)
-	defer cancel()
-	ctx := context.WithValue(ctx0, taskKey, taskCtx)
-	taskCtx.cancel = cancel
-	taskCtx.wCtx.log.Printf("[workflow.task:%s] start", taskCtx.name)
-	err := taskCtx.runner.Run(ctx)
-	taskCtx.wCtx.log.Printf("[workflow.task:%s] end", taskCtx.name)
-	wCtx.taskCompleted(taskCtx, err)
-}
-
-// GetTaskContext extracts task context from binded context.Context
-func GetTaskContext(ctx context.Context) (*TaskContext, bool) {
-	taskCtx, ok := ctx.Value(taskKey).(*TaskContext)
-	return taskCtx, ok
-}
-
-// MustGetTaskContext extracts task context from binded context.Context.
-// If context.Context doesn't have context.Context this will panic.
-func MustGetTaskContext(ctx context.Context) *TaskContext {
-	taskCtx, ok := GetTaskContext(ctx)
-	if !ok {
-		panic("context.Context didn't bind to *workflow.TaskContext")
-	}
-	return taskCtx
-}
-
-// Name returns name of Task.
-func (taskCtx *TaskContext) Name() string {
-	return taskCtx.name
 }

@@ -35,9 +35,8 @@ func TestTaskName(t *testing.T) {
 	name := t.Name() + "_1"
 	task := workflow.NewTask(name,
 		workflow.RunnerFunc(func(ctx context.Context) error {
-			taskCtx := workflow.MustGetTaskContext(ctx)
 			sum += 2
-			if s := taskCtx.Name(); s != name {
+			if s := workflow.TaskName(ctx); s != name {
 				t.Errorf("unexpected name: want=%s got=%s", name, s)
 			}
 			return nil
@@ -177,10 +176,9 @@ func TestCancelWorkflow(t *testing.T) {
 	)
 	task3 := workflow.NewTask(t.Name()+"_3",
 		workflow.RunnerFunc(func(ctx context.Context) error {
-			taskCtx := workflow.MustGetTaskContext(ctx)
 			sum *= 7
 			time.Sleep(10 * time.Millisecond)
-			taskCtx.CancelWorkflow()
+			workflow.Cancel(ctx)
 			sum += 11
 			return nil
 		}),
@@ -252,9 +250,8 @@ func TestCancelTask(t *testing.T) {
 	)
 	task4 := workflow.NewTask(t.Name()+"_4",
 		workflow.RunnerFunc(func(ctx context.Context) error {
-			taskCtx := workflow.MustGetTaskContext(ctx)
 			sum *= 13
-			taskCtx.CancelTask(task2)
+			workflow.CancelTask(ctx, task2)
 			return nil
 		}), task3,
 	)
@@ -268,14 +265,24 @@ func TestCancelTask(t *testing.T) {
 	}
 }
 
+func TestAtExitPanic(t *testing.T) {
+	defer func() {
+		v := recover()
+		if s, ok := v.(string); ok && s == "context.Context didn't bind to workflow context" {
+			return
+		}
+		t.Fatalf("unexpected result, recover() returns: %v", v)
+	}()
+	workflow.AtExit(context.Background(), nil)
+}
+
 func TestCancelSelfTask(t *testing.T) {
 	sum := 2
 	var taskMe *workflow.Task
 	task1 := workflow.NewTask(t.Name()+"_1",
 		workflow.RunnerFunc(func(ctx context.Context) error {
-			taskCtx := workflow.MustGetTaskContext(ctx)
 			sum *= 3
-			taskCtx.CancelTask(taskMe)
+			workflow.CancelTask(ctx, taskMe)
 			// this may return context.Canceled if CancelTask is succeeded.
 			// and the test would fail in that case.
 			return ctx.Err()
@@ -318,28 +325,25 @@ func TestOutputInput(t *testing.T) {
 	sum := 2
 	task1 := workflow.NewTask(t.Name()+"_1",
 		workflow.RunnerFunc(func(ctx context.Context) error {
-			taskCtx := workflow.MustGetTaskContext(ctx)
 			sum *= 3
-			taskCtx.SetOutput(sum)
+			workflow.SetResult(ctx, sum)
 			return nil
 		}),
 	)
 	task2 := workflow.NewTask(t.Name()+"_2",
 		workflow.RunnerFunc(func(ctx context.Context) error {
-			taskCtx := workflow.MustGetTaskContext(ctx)
 			sum += 5
-			taskCtx.SetOutput(sum)
+			workflow.SetResult(ctx, sum)
 			return nil
 		}), task1,
 	)
 	task3 := workflow.NewTask(t.Name()+"_3",
 		workflow.RunnerFunc(func(ctx context.Context) error {
-			taskCtx := workflow.MustGetTaskContext(ctx)
-			o1, err := taskCtx.Input(task1)
+			o1, err := workflow.Result(ctx, task1)
 			if err != nil {
 				return err
 			}
-			o2, err := taskCtx.Input(task2)
+			o2, err := workflow.Result(ctx, task2)
 			if err != nil {
 				return err
 			}
@@ -379,16 +383,15 @@ func TestInvalidOutput(t *testing.T) {
 	)
 	task0 := workflow.NewTask(t.Name()+"_0",
 		workflow.RunnerFunc(func(ctx context.Context) error {
-			taskCtx := workflow.MustGetTaskContext(ctx)
-			_, err := taskCtx.Input(task1)
+			_, err := workflow.Result(ctx, task1)
 			if !errors.Is(err, workflow.ErrNoOutput) {
 				t.Errorf("unexpected error for task1:\nwant=%s\ngot=%s", workflow.ErrNoOutput, err)
 			}
-			_, err = taskCtx.Input(task2)
+			_, err = workflow.Result(ctx, task2)
 			if !errors.Is(err, errFoo) {
 				t.Errorf("unexpected error for task2:\nwant=%s\ngot=%s", errFoo, err)
 			}
-			_, err = taskCtx.Input(task3)
+			_, err = workflow.Result(ctx, task3)
 			if !errors.Is(err, workflow.ErrNotInWorkflow) {
 				t.Errorf("unexpected error for task2:\nwant=%s\ngot=%s", workflow.ErrNotInWorkflow, err)
 			}

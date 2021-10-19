@@ -45,13 +45,9 @@ func TestTask_WithRunner(t *testing.T) {
 	runTask(2*3 + 5)
 }
 
-func TestMustGetTaskContextPanic(t *testing.T) {
-	defer func() {
-		v := recover()
-		if s, ok := v.(string); ok && s == "context.Context didn't bind to *workflow.TaskContext" {
-			return
-		}
-		t.Fatalf("unexpected result, recover() returns: %v", v)
-	}()
-	_ = workflow.MustGetTaskContext(context.Background())
+func TestNameWithoutTask(t *testing.T) {
+	s := workflow.TaskName(context.Background())
+	if s != "" {
+		t.Errorf("unexpecetd, workflow.TaskName() returns: %q", s)
+	}
 }

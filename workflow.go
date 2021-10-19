@@ -16,9 +16,9 @@ type workflowContext struct {
 	rw   sync.RWMutex
 	quit chan struct{}
 
-	contexts map[*Task]*TaskContext
-	idling   map[*TaskContext]struct{}
-	running  map[*TaskContext]struct{}
+	contexts map[*Task]*taskContext
+	idling   map[*taskContext]struct{}
+	running  map[*taskContext]struct{}
 
 	atExit []ExitHandler
 
@@ -27,11 +27,11 @@ type workflowContext struct {
 	err    error
 }
 
-func (wCtx *workflowContext) prepareTaskContext(task *Task) *TaskContext {
+func (wCtx *workflowContext) prepareTaskContext(task *Task) *taskContext {
 	if taskCtx, ok := wCtx.contexts[task]; ok {
 		return taskCtx
 	}
-	taskCtx := &TaskContext{
+	taskCtx := &taskContext{
 		wCtx:   wCtx,
 		name:   task.name,
 		runner: task.getRunner(),
@@ -45,7 +45,7 @@ func (wCtx *workflowContext) prepareTaskContext(task *Task) *TaskContext {
 	return taskCtx
 }
 
-func (wCtx *workflowContext) taskCompleted(taskCtx *TaskContext, err error) {
+func (wCtx *workflowContext) taskCompleted(taskCtx *taskContext, err error) {
 	wCtx.rw.Lock()
 	taskCtx.err = err
 	taskCtx.ended = true
@@ -184,9 +184,9 @@ func (w *Workflow) Start(ctx context.Context) (Context, error) {
 	return wCtx, nil
 }
 
-type workflowKeyType struct{}
+type workflowKey struct{}
 
-var workflowKey workflowKeyType
+var workflowKey0 workflowKey
 
 func (w *Workflow) newContext(ctx context.Context) *workflowContext {
 	ctx, cancel := context.WithCancel(ctx)
@@ -198,16 +198,21 @@ func (w *Workflow) newContext(ctx context.Context) *workflowContext {
 		cancel:   cancel,
 		log:      log,
 		quit:     make(chan struct{}),
-		contexts: make(map[*Task]*TaskContext),
-		idling:   make(map[*TaskContext]struct{}),
-		running:  make(map[*TaskContext]struct{}),
+		contexts: make(map[*Task]*taskContext),
+		idling:   make(map[*taskContext]struct{}),
+		running:  make(map[*taskContext]struct{}),
 	}
-	wCtx.ctx = context.WithValue(ctx, workflowKey, wCtx)
+	wCtx.ctx = context.WithValue(ctx, workflowKey0, wCtx)
 	return wCtx
 }
 
+func getWorkflowContext(ctx context.Context) (*workflowContext, bool) {
+	wCtx, ok := ctx.Value(workflowKey0).(*workflowContext)
+	return wCtx, ok
+}
+
 func mustGetWorkflowContext(ctx context.Context) *workflowContext {
-	wCtx, ok := ctx.Value(workflowKey).(*workflowContext)
+	wCtx, ok := getWorkflowContext(ctx)
 	if !ok {
 		panic("context.Context didn't bind to workflow context")
 	}
@@ -220,4 +225,10 @@ func AtExit(ctx context.Context, h ExitHandler) {
 	wCtx.rw.Lock()
 	wCtx.atExit = append(wCtx.atExit, h)
 	wCtx.rw.Unlock()
+}
+
+// Cancel cancels a workflow which corresponding context.
+func Cancel(ctx context.Context) {
+	wCtx := mustGetWorkflowContext(ctx)
+	wCtx.cancel()
 }
