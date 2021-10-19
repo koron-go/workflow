@@ -65,15 +65,14 @@ func (task *Task) getRunner() Runner {
 	return task.runner
 }
 
-// TaskContext is a context for an executing task.
-type TaskContext struct {
+// taskContext is a context for an executing task.
+type taskContext struct {
 	wCtx *workflowContext
 
 	name   string
 	runner Runner
 	dep    dependency
 
-	ctx    context.Context
 	cancel context.CancelFunc
 
 	started bool
@@ -83,40 +82,62 @@ type TaskContext struct {
 	err    error
 }
 
-// Context gets a context.Context of a Task.
-func (taskCtx *TaskContext) Context() context.Context {
-	return taskCtx.ctx
+type taskKey struct{}
+
+var taskKey0 taskKey
+
+func (taskCtx *taskContext) runTask(ctx context.Context) {
+	wCtx := mustGetWorkflowContext(ctx)
+	ctx0, cancel := context.WithCancel(wCtx.ctx)
+	defer cancel()
+	ctx1 := context.WithValue(ctx0, taskKey0, taskCtx)
+	taskCtx.cancel = cancel
+	wCtx.log.Printf("[workflow.task:%s] start", taskCtx.name)
+	err := taskCtx.runner.Run(ctx1)
+	wCtx.log.Printf("[workflow.task:%s] end", taskCtx.name)
+	wCtx.taskCompleted(taskCtx, err)
 }
 
-// CancelWorkflow cancels a workflow, which current task belongs.
-func (taskCtx *TaskContext) CancelWorkflow() {
-	taskCtx.wCtx.cancel()
+// getTaskContext extracts task context from binded context.Context
+func getTaskContext(ctx context.Context) (*taskContext, bool) {
+	taskCtx, ok := ctx.Value(taskKey0).(*taskContext)
+	return taskCtx, ok
 }
 
-// CancelTask cancels another tasks in a workflow.
-// This can't cancel myself nor tasks not in a workflow.
-func (taskCtx *TaskContext) CancelTask(tasks ...*Task) {
-	for _, task := range tasks {
-		otherCtx, ok := taskCtx.wCtx.contexts[task]
-		if !ok || otherCtx == taskCtx {
-			continue
-		}
-		otherCtx.cancel()
+// mustGetTaskContext extracts task context from binded context.Context.
+// If context.Context doesn't have context.Context this will panic.
+func mustGetTaskContext(ctx context.Context) *taskContext {
+	taskCtx, ok := getTaskContext(ctx)
+	if !ok {
+		panic("context.Context didn't bind to any tasks")
 	}
+	return taskCtx
 }
 
-// SetOutput sets output data of a Task.
-func (taskCtx *TaskContext) SetOutput(v interface{}) {
-	taskCtx.wCtx.rw.Lock()
+// TaskName returns name of task which corresponding context.
+func TaskName(ctx context.Context) string {
+	taskCtx := mustGetTaskContext(ctx)
+	return taskCtx.name
+}
+
+// TaskSetResult sets result value of a task which corresponding to context.
+func TaskSetResult(ctx context.Context, v interface{}) {
+	wCtx := mustGetWorkflowContext(ctx)
+	wCtx.rw.Lock()
+	taskCtx := mustGetTaskContext(ctx)
 	taskCtx.output = v
-	taskCtx.wCtx.rw.Unlock()
+	wCtx.rw.Unlock()
 }
 
-// Input gets output of another task in a workflow.
-func (taskCtx *TaskContext) Input(task *Task) (interface{}, error) {
-	taskCtx.wCtx.rw.RLock()
-	defer taskCtx.wCtx.rw.RUnlock()
-	otherCtx, ok := taskCtx.wCtx.contexts[task]
+// Result gets result value of completed task in a workflow.
+func Result(ctx context.Context, task *Task) (interface{}, error) {
+	wCtx, ok := getWorkflowContext(ctx)
+	if !ok {
+		return nil, ErrNoWorkflows
+	}
+	wCtx.rw.RLock()
+	defer wCtx.rw.RUnlock()
+	otherCtx, ok := wCtx.contexts[task]
 	if !ok {
 		return nil, ErrNotInWorkflow
 	}
@@ -127,25 +148,4 @@ func (taskCtx *TaskContext) Input(task *Task) (interface{}, error) {
 		return nil, ErrNoOutput
 	}
 	return otherCtx.output, nil
-}
-
-func (taskCtx *TaskContext) runTask(wCtx *workflowContext) {
-	taskCtx.ctx, taskCtx.cancel = context.WithCancel(wCtx.ctx)
-	defer taskCtx.cancel()
-	taskCtx.wCtx.log.Printf("[workflow.task:%s] start", taskCtx.name)
-	err := taskCtx.runner.Run(taskCtx)
-	taskCtx.wCtx.log.Printf("[workflow.task:%s] end", taskCtx.name)
-	wCtx.taskCompleted(taskCtx, err)
-}
-
-// Name returns name of Task.
-func (taskCtx *TaskContext) Name() string {
-	return taskCtx.name
-}
-
-// AtExit adds a runner, it will be called when a workflow exit.
-func (taskCtx *TaskContext) AtExit(r ExitHandler) {
-	taskCtx.wCtx.rw.Lock()
-	taskCtx.wCtx.atExit = append(taskCtx.wCtx.atExit, r)
-	taskCtx.wCtx.rw.Unlock()
 }

@@ -4,7 +4,7 @@ build:
 
 .PHONY: test
 test:
-	go test ./...
+	go test -gcflags '-e' ./...
 
 .PHONY: tags
 tags:

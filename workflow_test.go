@@ -6,7 +6,6 @@ import (
 	"errors"
 	"log"
 	"reflect"
-	"sync"
 	"testing"
 	"time"
 
@@ -16,7 +15,7 @@ import (
 func TestSingle(t *testing.T) {
 	var sum int
 	task := workflow.NewTask(t.Name()+"_1",
-		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+		workflow.RunnerFunc(func(context.Context) error {
 			sum += 2
 			return nil
 		}),
@@ -34,9 +33,9 @@ func TestTaskName(t *testing.T) {
 	var sum int
 	name := t.Name() + "_1"
 	task := workflow.NewTask(name,
-		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
+		workflow.RunnerFunc(func(ctx context.Context) error {
 			sum += 2
-			if s := taskCtx.Name(); s != name {
+			if s := workflow.TaskName(ctx); s != name {
 				t.Errorf("unexpected name: want=%s got=%s", name, s)
 			}
 			return nil
@@ -64,19 +63,19 @@ func TestNoTaks(t *testing.T) {
 func TestSequential(t *testing.T) {
 	sum := 2
 	task1 := workflow.NewTask(t.Name()+"_1",
-		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+		workflow.RunnerFunc(func(context.Context) error {
 			sum *= 3
 			return nil
 		}),
 	)
 	task2 := workflow.NewTask(t.Name()+"_2",
-		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+		workflow.RunnerFunc(func(context.Context) error {
 			sum += 5
 			return nil
 		}), task1,
 	)
 	task3 := workflow.NewTask(t.Name()+"_3",
-		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+		workflow.RunnerFunc(func(context.Context) error {
 			sum *= 7
 			return nil
 		}), task2,
@@ -94,25 +93,25 @@ func TestSequential(t *testing.T) {
 func TestParallel(t *testing.T) {
 	sum := 2
 	task1 := workflow.NewTask(t.Name()+"_1",
-		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+		workflow.RunnerFunc(func(context.Context) error {
 			sum *= 3
 			return nil
 		}),
 	)
 	task2 := workflow.NewTask(t.Name()+"_2",
-		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+		workflow.RunnerFunc(func(context.Context) error {
 			sum += 5
 			return nil
 		}), task1,
 	)
 	task3 := workflow.NewTask(t.Name()+"_3",
-		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+		workflow.RunnerFunc(func(context.Context) error {
 			sum += 7
 			return nil
 		}), task1,
 	)
 	task4 := workflow.NewTask(t.Name()+"_4",
-		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+		workflow.RunnerFunc(func(context.Context) error {
 			sum *= 11
 			return nil
 		}), task2, task3,
@@ -130,8 +129,7 @@ func TestParallel(t *testing.T) {
 func TestCancel(t *testing.T) {
 	sum := 2
 	task1 := workflow.NewTask(t.Name()+"_1",
-		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
-			ctx := taskCtx.Context()
+		workflow.RunnerFunc(func(ctx context.Context) error {
 			sum *= 3
 			<-ctx.Done()
 			err := ctx.Err()
@@ -162,32 +160,30 @@ func TestCancel(t *testing.T) {
 func TestCancelWorkflow(t *testing.T) {
 	sum := 2
 	task1 := workflow.NewTask(t.Name()+"_1",
-		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
-			ctx := taskCtx.Context()
+		workflow.RunnerFunc(func(ctx context.Context) error {
 			<-ctx.Done()
 			sum += 3
 			return ctx.Err()
 		}),
 	)
 	task2 := workflow.NewTask(t.Name()+"_2",
-		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
-			ctx := taskCtx.Context()
+		workflow.RunnerFunc(func(ctx context.Context) error {
 			<-ctx.Done()
 			sum += 5
 			return ctx.Err()
 		}),
 	)
 	task3 := workflow.NewTask(t.Name()+"_3",
-		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
+		workflow.RunnerFunc(func(ctx context.Context) error {
 			sum *= 7
 			time.Sleep(10 * time.Millisecond)
-			taskCtx.CancelWorkflow()
+			workflow.Cancel(ctx)
 			sum += 11
 			return nil
 		}),
 	)
 	task4 := workflow.NewTask(t.Name()+"_4",
-		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
+		workflow.RunnerFunc(func(context.Context) error {
 			sum *= 12
 			return nil
 		}), task1, task2, task3,
@@ -222,16 +218,15 @@ func TestCancelWorkflow(t *testing.T) {
 func TestCancelTask(t *testing.T) {
 	sum := 2
 	task1 := workflow.NewTask(t.Name()+"_1",
-		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
+		workflow.RunnerFunc(func(context.Context) error {
 			sum *= 3
 			return nil
 		}),
 	)
 	task2 := workflow.NewTask(t.Name()+"_2",
-		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
+		workflow.RunnerFunc(func(ctx context.Context) error {
 			sum += 5
 			st := time.Now()
-			ctx := taskCtx.Context()
 			<-ctx.Done()
 			d := time.Since(st)
 			err := ctx.Err()
@@ -246,16 +241,16 @@ func TestCancelTask(t *testing.T) {
 		}), task1,
 	)
 	task3 := workflow.NewTask(t.Name()+"_3",
-		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
+		workflow.RunnerFunc(func(ctx context.Context) error {
 			sum += 11
 			time.Sleep(15 * time.Millisecond)
 			return nil
 		}), task1,
 	)
 	task4 := workflow.NewTask(t.Name()+"_4",
-		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
+		workflow.RunnerFunc(func(ctx context.Context) error {
 			sum *= 13
-			taskCtx.CancelTask(task2)
+			workflow.CancelTask(ctx, task2)
 			return nil
 		}), task3,
 	)
@@ -269,16 +264,27 @@ func TestCancelTask(t *testing.T) {
 	}
 }
 
+func TestAtExitPanic(t *testing.T) {
+	defer func() {
+		v := recover()
+		if s, ok := v.(string); ok && s == "context.Context didn't bind to workflow context" {
+			return
+		}
+		t.Fatalf("unexpected recover() returns: %v", v)
+	}()
+	workflow.AtExit(context.Background(), nil)
+}
+
 func TestCancelSelfTask(t *testing.T) {
 	sum := 2
 	var taskMe *workflow.Task
 	task1 := workflow.NewTask(t.Name()+"_1",
-		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
+		workflow.RunnerFunc(func(ctx context.Context) error {
 			sum *= 3
-			taskCtx.CancelTask(taskMe)
+			workflow.CancelTask(ctx, taskMe)
 			// this may return context.Canceled if CancelTask is succeeded.
 			// and the test would fail in that case.
-			return taskCtx.Context().Err()
+			return ctx.Err()
 		}),
 	)
 	taskMe = task1
@@ -294,12 +300,12 @@ func TestCancelSelfTask(t *testing.T) {
 
 func TestError(t *testing.T) {
 	task1 := workflow.NewTask(t.Name()+"_1",
-		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+		workflow.RunnerFunc(func(context.Context) error {
 			return errors.New("planned error")
 		}),
 	)
 	task2 := workflow.NewTask(t.Name()+"_2",
-		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+		workflow.RunnerFunc(func(context.Context) error {
 			t.Error("never executed")
 			return nil
 		}), task1,
@@ -317,26 +323,26 @@ func TestError(t *testing.T) {
 func TestOutputInput(t *testing.T) {
 	sum := 2
 	task1 := workflow.NewTask(t.Name()+"_1",
-		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
+		workflow.RunnerFunc(func(ctx context.Context) error {
 			sum *= 3
-			taskCtx.SetOutput(sum)
+			workflow.TaskSetResult(ctx, sum)
 			return nil
 		}),
 	)
 	task2 := workflow.NewTask(t.Name()+"_2",
-		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
+		workflow.RunnerFunc(func(ctx context.Context) error {
 			sum += 5
-			taskCtx.SetOutput(sum)
+			workflow.TaskSetResult(ctx, sum)
 			return nil
 		}), task1,
 	)
 	task3 := workflow.NewTask(t.Name()+"_3",
-		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
-			o1, err := taskCtx.Input(task1)
+		workflow.RunnerFunc(func(ctx context.Context) error {
+			o1, err := workflow.Result(ctx, task1)
 			if err != nil {
 				return err
 			}
-			o2, err := taskCtx.Input(task2)
+			o2, err := workflow.Result(ctx, task2)
 			if err != nil {
 				return err
 			}
@@ -357,34 +363,34 @@ func TestOutputInput(t *testing.T) {
 func TestInvalidOutput(t *testing.T) {
 	errFoo := errors.New("foo")
 	task1 := workflow.NewTask(t.Name()+"_1",
-		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
+		workflow.RunnerFunc(func(context.Context) error {
 			// no outputs
 			return nil
 		}),
 	)
 	task2 := workflow.NewTask(t.Name()+"_2",
-		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
+		workflow.RunnerFunc(func(context.Context) error {
 			// end with error
 			return errFoo
 		}),
 	)
 	task3 := workflow.NewTask(t.Name()+"_3",
-		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
+		workflow.RunnerFunc(func(context.Context) error {
 			// not in a workflow
 			return nil
 		}),
 	)
 	task0 := workflow.NewTask(t.Name()+"_0",
-		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
-			_, err := taskCtx.Input(task1)
+		workflow.RunnerFunc(func(ctx context.Context) error {
+			_, err := workflow.Result(ctx, task1)
 			if !errors.Is(err, workflow.ErrNoOutput) {
 				t.Errorf("unexpected error for task1:\nwant=%s\ngot=%s", workflow.ErrNoOutput, err)
 			}
-			_, err = taskCtx.Input(task2)
+			_, err = workflow.Result(ctx, task2)
 			if !errors.Is(err, errFoo) {
 				t.Errorf("unexpected error for task2:\nwant=%s\ngot=%s", errFoo, err)
 			}
-			_, err = taskCtx.Input(task3)
+			_, err = workflow.Result(ctx, task3)
 			if !errors.Is(err, workflow.ErrNotInWorkflow) {
 				t.Errorf("unexpected error for task2:\nwant=%s\ngot=%s", workflow.ErrNotInWorkflow, err)
 			}
@@ -405,24 +411,24 @@ func TestInvalidOutput(t *testing.T) {
 func TestAtExit(t *testing.T) {
 	sum := 2
 	task1 := workflow.NewTask(t.Name()+"_1",
-		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
-			taskCtx.AtExit(func(context.Context) {
+		workflow.RunnerFunc(func(ctx context.Context) error {
+			workflow.AtExit(ctx, func(context.Context) {
 				sum *= 3
 			})
 			return nil
 		}),
 	)
 	task2 := workflow.NewTask(t.Name()+"_2",
-		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
-			taskCtx.AtExit(func(context.Context) {
+		workflow.RunnerFunc(func(ctx context.Context) error {
+			workflow.AtExit(ctx, func(context.Context) {
 				sum += 5
 			})
 			return nil
 		}), task1,
 	)
 	task3 := workflow.NewTask(t.Name()+"_3",
-		workflow.RunnerFunc(func(taskCtx *workflow.TaskContext) error {
-			taskCtx.AtExit(func(context.Context) {
+		workflow.RunnerFunc(func(ctx context.Context) error {
+			workflow.AtExit(ctx, func(context.Context) {
 				sum *= 7
 			})
 			return nil
@@ -441,19 +447,19 @@ func TestAtExit(t *testing.T) {
 func TestWhenComplete(t *testing.T) {
 	sum := 2
 	task1 := workflow.NewTask(t.Name()+"_1",
-		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+		workflow.RunnerFunc(func(context.Context) error {
 			sum *= 3
 			return nil
 		}),
 	)
 	task2 := workflow.NewTask(t.Name()+"_2",
-		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+		workflow.RunnerFunc(func(context.Context) error {
 			sum += 5
 			return nil
 		}),
 	)
 	task3 := workflow.NewTask(t.Name()+"_3",
-		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+		workflow.RunnerFunc(func(context.Context) error {
 			sum *= 7
 			return nil
 		}),
@@ -477,25 +483,25 @@ func TestWhenStart(t *testing.T) {
 	// task3 -> (complete) -> task4
 	sum := 2
 	task1 := workflow.NewTask(t.Name()+"_1",
-		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+		workflow.RunnerFunc(func(context.Context) error {
 			sum *= 11
 			return nil
 		}),
 	)
 	task2 := workflow.NewTask(t.Name()+"_2",
-		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+		workflow.RunnerFunc(func(context.Context) error {
 			sum += 3
 			return nil
 		}), task1,
 	)
 	task3 := workflow.NewTask(t.Name()+"_3",
-		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+		workflow.RunnerFunc(func(context.Context) error {
 			sum += 5
 			return nil
 		}),
 	).WhenStart(task2)
 	task4 := workflow.NewTask(t.Name()+"_5",
-		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+		workflow.RunnerFunc(func(context.Context) error {
 			sum += 7
 			return nil
 		}), task3,
@@ -512,17 +518,17 @@ func TestWhenStart(t *testing.T) {
 
 func TestWhenEnd(t *testing.T) {
 	task1 := workflow.NewTask(t.Name()+"_1",
-		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+		workflow.RunnerFunc(func(context.Context) error {
 			return nil
 		}),
 	)
 	task2 := workflow.NewTask(t.Name()+"_2",
-		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+		workflow.RunnerFunc(func(context.Context) error {
 			return errors.New("foo")
 		}), task1,
 	)
 	task3 := workflow.NewTask(t.Name()+"_3",
-		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+		workflow.RunnerFunc(func(context.Context) error {
 			return nil
 		}),
 	).WhenEnd(task2)
@@ -539,19 +545,19 @@ func TestWhenEnd(t *testing.T) {
 func TestWorkflow_Add(t *testing.T) {
 	sum := 2
 	task1 := workflow.NewTask(t.Name()+"_1",
-		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+		workflow.RunnerFunc(func(context.Context) error {
 			sum *= 3
 			return nil
 		}),
 	)
 	task2 := workflow.NewTask(t.Name()+"_2",
-		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+		workflow.RunnerFunc(func(context.Context) error {
 			sum += 5
 			return nil
 		}), task1,
 	)
 	task3 := workflow.NewTask(t.Name()+"_3",
-		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+		workflow.RunnerFunc(func(context.Context) error {
 			sum *= 7
 			return nil
 		}), task2,
@@ -566,74 +572,10 @@ func TestWorkflow_Add(t *testing.T) {
 	}
 }
 
-func TestWorkflow_SecondWait(t *testing.T) {
-	sum := 2
-	task1 := workflow.NewTask(t.Name()+"_1",
-		workflow.RunnerFunc(func(*workflow.TaskContext) error {
-			sum *= 3
-			return nil
-		}),
-	)
-	wx, err := workflow.New(task1).Start(context.Background())
-	if err != nil {
-		t.Fatalf("failed to start: %s", err)
-	}
-	err = wx.Wait(context.Background())
-	if err != nil {
-		t.Fatalf("failed to 1st wait: %s", err)
-	}
-	err = wx.Wait(context.Background())
-	if err != nil {
-		t.Fatalf("failed to 2nd wait: %s", err)
-	}
-	exp := 2 * 3
-	if sum != exp {
-		t.Fatalf("unexpected sum: want=%d got=%d", exp, sum)
-	}
-}
-
-func TestWorkflow_DoubleWait(t *testing.T) {
-	sum := 2
-	task1 := workflow.NewTask(t.Name()+"_1",
-		workflow.RunnerFunc(func(*workflow.TaskContext) error {
-			sum *= 3
-			time.Sleep(10 * time.Millisecond)
-			return nil
-		}),
-	)
-	wx, err := workflow.New(task1).Start(context.Background())
-	if err != nil {
-		t.Fatalf("failed to start: %s", err)
-	}
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		err = wx.Wait(context.Background())
-		if err != nil {
-			t.Errorf("failed to 1st wait: %s", err)
-		}
-		sum += 5
-	}()
-	go func() {
-		defer wg.Done()
-		err = wx.Wait(context.Background())
-		if err != nil {
-			t.Errorf("failed to 2nd wait: %s", err)
-		}
-		sum += 7
-	}()
-	wg.Wait()
-	exp := 2*3 + 5 + 7
-	if sum != exp {
-		t.Fatalf("unexpected sum: want=%d got=%d", exp, sum)
-	}
-}
-
 func TestLogger(t *testing.T) {
 	sum := 2
 	task1 := workflow.NewTask(t.Name()+"_1",
-		workflow.RunnerFunc(func(*workflow.TaskContext) error {
+		workflow.RunnerFunc(func(context.Context) error {
 			sum *= 3
 			return nil
 		}),
