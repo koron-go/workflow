@@ -133,11 +133,11 @@ func New(tasks ...*Task) *Workflow {
 // Run executes a workflow with its definition.  All tasks which depended by
 // termination tasks and recursively depended tasks will be executed.
 func (w *Workflow) Run(ctx context.Context) error {
-	c, err := w.start(ctx)
+	wCtx, err := w.start(ctx)
 	if err != nil {
 		return err
 	}
-	return c.wait(context.Background())
+	return wCtx.wait(context.Background())
 }
 
 // SetLogger sets logger which log task's start/end logs.
